@@ -1,0 +1,52 @@
+# -----------------------------------------------------------------------------
+# raw_capture.yaml - log raw pulse durations of the white COMM wire, nothing else.
+#
+# This is the firmware the protocol was worked out with. The ESP32 RMT peripheral measures
+# pulse durations in hardware with ~1 us resolution; ESPHome prints them as
+#     Received Raw: -16, 16, -15, 17, ...      (positive = high, negative = low, microseconds)
+#
+#     timeout 600 esphome logs raw_capture.yaml --device <ip> > capture.log
+#     python3 ../tools/timeline.py capture.log
+#
+# Lesson learned the hard way: on an unknown bus, MEASURE PULSES. Do not guess baud rates.
+# fancoil.yaml can produce the same log through its "Raw pulse logging" switch.
+# -----------------------------------------------------------------------------
+
+substitutions:
+  name: fancoil
+
+esphome:
+  name: ${name}
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "${name} fallback"
+
+captive_portal:
+
+logger:
+  level: DEBUG
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  platform: esphome
+  password: !secret ota_password
+
+remote_receiver:
+  - id: rx_white
+    pin: GPIO34
+    dump: raw
+    filter: 2us        # anything shorter is noise
+    idle: 300us        # 300 us of silence ends a burst (one burst = one frame)
+    buffer_size: 20kb
+    tolerance: 20%

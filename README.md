@@ -1,0 +1,153 @@
+# Innova fan coil with E4T643 on-board control → ESPHome / Home Assistant
+
+Reverse-engineering the **COMM** link between the main board and the touch display of Innova fan coils
+that have **no Modbus terminals**, so that they can be read — and eventually controlled — from
+Home Assistant with an ESP32 and a handful of passive parts.
+
+> **Status — milestone 1 reached on 25 November 2026: reading works.**
+> An ESP32 running ESPHome decodes the line and publishes room temperature, fan speed, the
+> heating/cooling symbols and every key touch to Home Assistant.
+> **Writing (control) has not been attempted yet.** Nothing has ever been transmitted to the board.
+
+This is a work log published while the work is still going on. It is updated at every milestone.
+It is not affiliated with or endorsed by Innova.
+
+---
+
+## The goal
+
+Some Innova fan coils (AirLeaf family) ship with the on-board **Smart Touch control E4T643**. Unlike the
+units with the ESE645/EDA649 or ECA644 controls, these have **no RS485 / Modbus connection** that an
+installer can reach: the terminal block is simply not on the board.
+
+| | |
+|---|---|
+| On-board control | **E4T643** (sold as E4T643II) — 4 fixed fan speeds, thermostat, capacitive touch keys |
+| Main board label | `LAE · INN-FR-B20 · N276620D` |
+| Touch display | `INN-FR-DU4-A` |
+| Link between them | 4-wire cable on the connector marked **`COMM`** |
+
+What we want, in one sentence: **one source of truth, two views.** Home Assistant sets and shows the
+state; the physical touch panel keeps working; and the panel shows whatever was set from Home Assistant,
+not a state of its own.
+
+And we want to get there **in a way anyone can repeat**: by sitting on the COMM cable between board and
+display with an ESP32, a cable and a few resistors — no soldering on the fan coil's board, no change to
+its firmware.
+
+## What works today (milestone 1 — read only)
+
+`esphome/fancoil.yaml` listens to one wire and gives Home Assistant:
+
+| Entity | What it is | Limits |
+|---|---|---|
+| Room temperature | the value the board sends to the display, with one decimal | the display itself only shows whole degrees |
+| Setpoint (last shown) | the setpoint | only known after someone touches a key: the board sends it for 20 s, then goes back to room temperature |
+| Fan speed | auto / night / low / high | |
+| Heating symbol, Cooling symbol | off / on / blinking | blinking = the unit wants to run but the water is not hot (or cold) enough |
+| Mode (last shown) | heating / cooling | when the demand is satisfied both symbols are off and the frame does not say which mode is selected |
+| Display shows | room temperature / setpoint | |
+| Key | which key is being touched right now | 7 keys known; the manual mentions 8 |
+| diagnostics | frames per second, unparsed bursts, line alive, last frame in hex | |
+
+The firmware only listens. The input pin it uses cannot drive a line.
+
+Checks behind this claim:
+
+- The decoder is plain C++ (`esphome/fancoil_decode.h`). The same file is compiled on a PC and run over
+  the captures in `captures/`: **75,215 frames, zero differences** against the reference parser in Python.
+  You can repeat that with `python3 tools/test_decoder.py captures/*.log.gz`.
+- On the ESP32 it keeps up with the line: 31.4 frames per second, no rejected bursts in the first minutes.
+- What it published matched what the person standing at the unit reported, key by key, for a session of
+  23 key touches (see `captures/README.md`).
+
+Not yet checked: behaviour over many hours, and more than one physical unit. Everything here comes from
+**one fan coil**.
+
+## How the link works, briefly
+
+The white wire carries one frame 31 times a second. It is **not** a UART.
+
+```
+[pre-pulse 0/2/3 ticks][sync 01010101][ 56 data bits ][ tail ~35 ticks ]
+                                        board → display  carries the key being touched
+1 tick = 15.89 µs
+```
+
+- The 56 bits are a picture of the display: three 7-segment digits, four fan-speed indicators, a heating
+  and a cooling symbol, and a flag saying whether the digits are room temperature or setpoint.
+- A key touch shows up in the **tail**, 3 to 7 frames *before* the data bits react. Each key has its own
+  tail. That tail is what we will try to reproduce in order to "press keys" from Home Assistant.
+
+Full details, evidence and open questions: **[docs/PROTOCOL.md](docs/PROTOCOL.md)**.
+
+## Roadmap
+
+| | Milestone | State |
+|---|---|---|
+| 1 | Read the line with ESPHome into Home Assistant | ✅ 25 Nov 2026 |
+| 2 | Complete the key dictionary (the 8th key, the long press of the mode key, the frame while the display is off) | open — needs no new hardware |
+| 3 | Prove that the board accepts a key tail sent by the ESP32 | open — **the big unknown** |
+| 4 | Bridge: ESP32 between board and display, both keep working | open |
+| 5 | A proper `climate` entity in Home Assistant | open |
+| 6 | Repeat on more units | open |
+
+If milestone 3 fails, the fallback is the microcontroller's UART (the unit shows a Modbus address item in
+its service menu, but the RS485 parts are not fitted). That route needs soldering, which is exactly what
+this project tries to avoid.
+
+## Repository layout
+
+| Path | What |
+|---|---|
+| `esphome/fancoil.yaml`, `fancoil_decode.h` | the read-only firmware |
+| `esphome/raw_capture.yaml` | firmware that only logs raw pulse durations |
+| `tools/` | Python tools that read those logs: frame parser, timeline, key dictionary, per-touch timing, symbol timeline, decoder test |
+| `captures/` | the raw captures everything here is derived from |
+| `docs/PROTOCOL.md` | what is known about the link, with the evidence for each claim |
+| `docs/HARDWARE.md` | wiring of the read-only tap, wire colours, safety |
+| `docs/JOURNEY.md` | how we got here, including two weeks of a wrong model and what overturned it |
+
+## Try it
+
+You need an ESP32 dev board, two resistors and access to the COMM cable.
+Read **[docs/HARDWARE.md](docs/HARDWARE.md)** first: the line is 5 V logic, and on this cable the
+**red wire is ground and the black wire is +5 V**.
+
+```bash
+cd esphome
+cp secrets.yaml.example secrets.yaml      # then edit it
+esphome run fancoil.yaml
+```
+
+Without any hardware you can still explore the captures:
+
+```bash
+python3 tools/timeline.py captures/2026-11-25_keys_part2.log.gz 08:46:00
+python3 tools/presses.py  captures/2026-11-25_keys_part*.log.gz
+python3 tools/symbols.py  captures/2026-11-25_keys_part2.log.gz
+python3 tools/test_decoder.py captures/*.log.gz
+```
+
+## How you can help
+
+- **Do you have the same control (E4T643) or the same board?** A raw capture from a second unit would
+  tell us whether the frame is identical across units and firmware versions. `esphome/raw_capture.yaml`
+  produces it; please open an issue.
+- **Do you recognise the frame format** — sync `01010101`, 56 bits, a reply tail on the same wire, a
+  16-bit linear check field that is not a plain CRC? It may be a known display-driver or vendor protocol.
+- **A different Innova control without Modbus terminals?** The approach should carry over; the bit map
+  probably will not.
+
+## Safety and disclaimer
+
+- A fan coil is a mains appliance. **Switch the power off before opening it** and before plugging or
+  unplugging anything.
+- Everything here is at your own risk. This is not an Innova product or document, and using it may affect
+  your warranty.
+- So far the project has only listened. When it starts transmitting, the documents will say exactly what
+  was tried and what happened.
+
+## License
+
+MIT — see [LICENSE](LICENSE). The Innova manuals referred to in the documents are not included here.
