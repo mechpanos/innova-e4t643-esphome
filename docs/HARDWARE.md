@@ -50,6 +50,10 @@ wire, measured twice with a multimeter:
 | **white** | +4.86 V, idles high | **data** | divider → `GPIO34` |
 | **yellow** | +0.12 V, idles low | no signal of its own found | not needed |
 
+![The plug of the COMM cable](images/comm-cable-plug.jpg)
+
+*The plug at the end of the COMM cable: red, white, yellow, black.*
+
 > **Red is ground and black is +5 V on this cable — the opposite of what the colours suggest.**
 > Taking black for ground cost this project about two weeks of meaningless captures. Check with a
 > multimeter on your own unit before connecting anything: colours and pin order may differ.
