@@ -55,6 +55,20 @@ its firmware.
 
 The firmware only listens. The input pin it uses cannot drive a line.
 
+![The fan coil's sensors in Home Assistant](docs/images/home-assistant-sensors.png)
+
+*The device page in Home Assistant, 25 November 2026. The unit this was taken from runs a build with Greek
+labels; the firmware in this repository is the same decoder with English names. From the top: display shows
+room temperature · room temperature 22.0 °C · mode heating · key none · heating symbol **blinking** · cooling
+symbol off · fan speed auto · setpoint unknown (nobody had touched a key since boot). The heat source was
+off at the time, so the unit was waiting for hot water — hence the blinking symbol. On the right, the last
+frame in hex, alternating between two images as the symbol blinks.*
+
+![Room temperature decoded from the line](docs/images/room-temperature-history.png)
+
+*Room temperature as decoded from the line over 90 minutes, in steps of 0.1 °C. The display on the unit
+itself shows whole degrees.*
+
 Checks behind this claim:
 
 - The decoder is plain C++ (`esphome/fancoil_decode.h`). The same file is compiled on a PC and run over
