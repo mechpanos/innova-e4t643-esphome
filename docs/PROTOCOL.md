@@ -1,13 +1,14 @@
 # The COMM link — what is known
 
-State: 25 November 2026. Everything below comes from **one** fan coil (board `INN-FR-B20 · N276620D`,
-control E4T643, display `INN-FR-DU4-A`) and from listening only. Nothing has been transmitted.
+State: 25 November 2026, evening (milestone 2). Everything below comes from **one** fan coil (board
+`INN-FR-B20 · N276620D`, control E4T643, display `INN-FR-DU4-A`) and from listening only. Nothing has been
+transmitted.
 
 Each claim carries its evidence:
 
 | tag | meaning |
 |---|---|
-| **[seen]** | the person at the unit saw it on the display while the line was being captured |
+| **[seen]** | the person at the unit saw (or heard) it while the line was being captured |
 | **[line]** | it is visible in the captures (`captures/`), reproducible with the tools |
 | **[manual]** | Innova's installation manual `N420927A` rev. 10 says so |
 | **[inferred]** | a conclusion from timing coincidences; not confirmed by eye |
@@ -25,7 +26,7 @@ against the red wire, unit idle:
 | red | 0 V | **ground** |
 | black | +5.00 V | **+5 V supply** to the display |
 | white | +4.86 V | **data**, idles high — everything in this document |
-| yellow | +0.12 V | idles low; no signal of its own found (see §10) |
+| yellow | +0.12 V | idles low; carries no keys, follows the fan motor (see §10) |
 
 Red is ground and black is +5 V — the opposite of the usual convention. Logic levels are 5 V.
 Order across the plug: red, white, yellow, black. The cable is marked 26 AWG.
@@ -79,7 +80,8 @@ In the hex notation used by the tools, bit 0 is the most significant bit of the 
 | 23 | always 1 | **[line]** |
 | 24, 25, 26, 27 | fan speed **auto, night, low, high** | **[seen]** all four |
 | 28 | **cooling** symbol | **[seen]** blinking on the display while the bit toggled |
-| 29–31 | always `010` | **[line]** |
+| 29 | **not constant**: 0 in everything until the unit was switched off and on with its key | **[line]** — see §12 |
+| 30–31 | always `10` | **[line]** |
 | 32–35 | always `0000` | **[line]** |
 | 36 | 0 = the digits are the **room temperature**, 1 = the **setpoint** | **[seen]** |
 | 37 | always 0 | **[line]** |
@@ -87,8 +89,9 @@ In the hex notation used by the tools, bit 0 is the most significant bit of the 
 | 39–54 | **check field** | **[line]** — see §7 |
 | 55 | equals bit 54 in every image | **[line]** |
 
-"Always" means: in everything captured so far. Bits that never changed have no label; they may well be
-symbols that were never lit (errors, keypad lock, the display being off).
+"Always" means: in everything captured so far **with the display on**. Bits that never changed have no
+label; they may well be symbols that were never lit (errors, keypad lock). Bit 29 was in this list until
+it changed. For the display being off see §11.
 
 **When nobody touches the panel the frame carries the room temperature, not the setpoint.** The
 setpoint is on the line only for 20 s after a key touch **[seen]** **[line]**.
@@ -116,9 +119,9 @@ Byte 0 = tenths, byte 1 = units, byte 2 = tens. In the units and tens bytes the 
 
 ## 5. Key touches travel in the tail
 
-In 23 touches, **the tail changed first** while the 56 data bits were still unchanged, and the data
-followed 3 to 7 bursts later (0.09–0.22 s) **[line]**. The changed tail lasts as long as the finger is
-on the key (10–71 bursts, 0.3–2.2 s), then returns to the idle tail.
+In 38 touches (23 in the morning session, 15 in the evening one), **the tail changed first** while the
+56 data bits were still unchanged **[line]**. The changed tail lasts as long as the finger is on the key
+(0.3 s to 10.7 s), then returns to the idle tail. All eight keys of the panel are now in the table.
 
 The tail written as one bit per tick (high = 1), counted from its first high pulse:
 
@@ -129,6 +132,7 @@ The tail written as one bit per tick (high = 1), counted from its first high pul
 | fan **night** | `0010 1000 0000 0000` | `11 0000 1` then low | `H1 L2 H1 L1 H1 L11 H2 L4 H1` |
 | fan **low** | `0010 0100 0000 0000` | `11 000 111` then low | `H1 L2 H1 L2 H1 L10 H2 L3 H3` |
 | fan **high** | `0010 0010 0000 0000` | `11 000 1 0 11` then low | `H1 L2 H1 L3 H1 L9 H2 L3 H1 L1 H2` |
+| **on/off** | `0010 0001 0000 0000` | `11 000 1 00 11` then low | `H1 L2 H1 L4 H1 L8 H2 L3 H1 L2 H2` |
 | **mode** (heat/cool) | `0010 0000 1000 0000` | `11 000 1 000 11` then low | `H1 L2 H1 L5 H1 L7 H2 L3 H1 L3 H2` |
 | **+** | `0010 0000 0101 0000` | `11 000 1 0000 1` then low | `H1 L2 H1 L6 H1 L1 H1 L4 H2 L3 H1 L4 H1` |
 | **−** | `0010 0000 0011 1000` | `11 000 1` then low | `H1 L2 H1 L7 H3 L3 H2 L3 H1` |
@@ -145,36 +149,54 @@ Mean durations in microseconds for each element are in [`tools/key_tails.json`](
 ### Key by key
 
 **Fan speeds — four separate keys [seen] + [line].** Four different tails, in ticks 4, 5, 6, 7, the same
-order as bits 24–27. In three touches (auto twice, night) the speed bit changed 3 bursts after the touch
-began. In two (high, low) only the screen changed at that point, to the setpoint, and the speed bit changed
-3 frames *after the finger left* (0.60 s and 0.42 s after the start). Five touches are not enough to tell why.
+order as bits 24–27. When the speed bit changes depends on the key, with no exception in 11 touches:
+
+| key | touches | the speed bit changes |
+|---|---|---|
+| auto, night | 6 | 0.10 s after the touch begins (3 frames) |
+| high, low | 5 | 3 frames **after the finger leaves** (0.4–0.7 s after the start) |
+
+Why the two pairs differ is **[unknown]**. With high and low, what changes at 0.10 s is only the screen,
+which switches to the setpoint.
 
 **+ and − [line].**
-- With the screen on room temperature, a touch only **shows** the setpoint, 3 bursts later (4 times).
+- With the screen on room temperature, a touch only **shows** the setpoint, 3 bursts later (5 times).
   Held for 1.33 s it still only showed it.
-- With the screen already on the setpoint, a touch changes it by 1 after 7 bursts (0.22–0.23 s, 11 times).
+- With the screen already on the setpoint, a touch changes it by 1 after 7 bursts (0.22–0.23 s, 13 times).
 - Held for more than 0.7 s it changes a second time, 0.5 s after the first.
 - Once the setpoint changed after only 3 bursts; that touch began 0.13 s after the previous one ended.
 
-**Mode — one key that is held [seen] + [line].** Both times it was used:
+**Mode — one key, three behaviours [seen] + [line].**
 
-| | heating → cooling | cooling → heating |
+| held for | what happens | evidence |
 |---|---|---|
-| the symbol of the **current** mode lights steadily | 0.10 s | 0.10 s |
-| the mode changes | **1.60 s** | **1.57 s** |
-| finger leaves | 2.23 s | 2.11 s |
+| a moment | the symbol of the **current** mode lights at 0.10 s and goes out again; nothing changes | the owner watched it; two touches on the line |
+| **1.56–1.60 s** | heating ↔ cooling | 5 changes: 1.60, 1.57, 1.56, 1.56, 1.56 s |
+| **10.02 s** | automatic changeover on — or off again | 2 changes, both at 10.02 s |
 
-A touch shorter than 1.6 s has not been tried; it might show the current mode without changing it **[unknown]**.
+- **Automatic changeover looks like both symbols lit**: bit 7 = 0 and bit 28 = 0, also once the screen is
+  back on room temperature **[line]**. The manual describes exactly that (§8.2.5, in the chapter of the
+  ECA644 control, stated for 4-pipe units) **[manual]**.
+- Entering it from heating, the 1.56 s step happens on the way: heating → cooling at 1.56 s → both at 10.02 s.
+- Leaving it, nothing happens at 1.56 s; at 10.02 s the cooling symbol goes out and heating remains. Seen
+  once, so "it always returns to heating" is not established.
+- After a mode change the symbol of the new mode stays lit for 4.0 s, then follows the demand (4.0 s for
+  heating, 3.97 s for cooling) **[line]**.
 
-**Mode held for 10 s or more — automatic changeover.** The owner reports it, and the manual describes it
-(§8.2.5: both symbols light together; stated as available on 4-pipe units only) — but in the chapter of
-the ECA644 control, not of the E4T643 **[manual]**. Not captured **[unknown]**.
+**On/off — the eighth key [seen] + [line].** The manual says the panel has eight capacitive keys (§9.2.1)
+and the panel shows them (photo in the README). Its tail was **predicted before it was captured**: the
+extra `1` of the other tails fell on ticks 4, 5, 6, 7 and 9, leaving tick 8 free, so the prediction was
+`0010 0001 0000 0000`. That is what came out.
 
-**The eighth key is on/off.** The manual says the panel has eight capacitive keys (§9.2.1) **[manual]**, and
-the panel shows them: `−`, `+`, mode, on/off, and the four fan speeds (photo in the README). Seven tails
-are known; the on/off key has not been captured. A prediction written down before capturing it: the
-extra `1` of the known tails falls on ticks 4, 5, 6, 7 and 9, so the eighth tail may be
-`0010 0001 0000 0000` (tick 8). It may also be wrong: `+` and `−` have more than one `1`.
+| from the touch | switching off | switching on |
+|---|---|---|
+| 0.09 s | the screen shows the setpoint | (the display is dark) |
+| **1.55 s / 1.56 s** | the image goes dark, finger still on the key | the display lights |
+| finger leaves | 1.97 s | 1.97 s |
+
+The owner's impression is that the key needs about three seconds; on the line the change came at 1.55 s
+both times. Two short touches later the same evening did not change the image. The shortest hold that
+works has not been measured **[unknown]**.
 
 ## 6. The heating and cooling symbols
 
@@ -207,6 +229,23 @@ What the line showed **[line]** ("set − room" uses the tenths digit of §4):
 - So the switch-on threshold of heating is not at zero. With this data it lies between +0.2 and +0.5 — or
   there is hysteresis, or a switch-on delay longer than 30 s. The data cannot tell these apart.
 - **When the demand is satisfied both bits are off and the frame does not reveal the selected mode.**
+  A momentary touch of the mode key reveals it without changing it (§5).
+
+The evening session added **[line]**:
+
+| time | setpoint | room | heating symbol | what came before |
+|---|---|---|---|---|
+| 21:55 | 24 | 23.5 | **on** | no mode change around that time |
+| 22:11–22:15 | 24 | 23.5 | **off** for four minutes | the mode had just been set to heating again |
+| 22:15:36 | 25 | 23.5 | comes on, 3 s after the setpoint change | |
+| 22:15:43 | 23 | 23.5 | goes off, 4 s after | |
+| 22:42:09 | 26 | 23.2 | comes on, 4.1 s after | |
+| 22:49:08 | 22 | 24.1 | goes off, 4.5 s after | |
+
+- The same difference (+0.5) gave the symbol once on and once off. That points to **hysteresis**: once off,
+  it needs a larger difference to come back **[inferred]**. The two thresholds are not known; the switch-on
+  one is above +0.5 and not above +1.5.
+- The symbol reacts 3 to 4.5 s after a setpoint change.
 
 ## 7. The check field
 
@@ -224,10 +263,14 @@ If you recognise it, please open an issue. The 49 images can be regenerated from
 - Whether the board **accepts** a tail sent by something other than the display. This is the whole next phase.
 - Who drives the line electrically during the tail, and whether the line is open-drain with a pull-up.
 - The rule of the check field, of the tail continuation and of the pre-pulse.
-- The tail of the on/off key, the frame while the display is off, the frame in automatic changeover.
-- The exact on/off thresholds of the symbols.
+- What bit 29 shows on the display (§12).
+- The two images around switching the display off and on that the parser does not read (§11).
+- The on and off thresholds of the symbols, and the shortest hold of the on/off key.
+- Why the high and low keys act on release while auto and night act at once.
 - What happened on 25 November at 08:22: for at least 10 s the line carried narrow pulses about every 50 µs
   and no frames at all; five minutes later it was normal. The capture is in `captures/`.
+- Isolated frames with a cut-off tail (`H1 L2 H1 L2 H1`, then silence) about once a second around the
+  on/off test, and for four minutes after it; none in the other recordings.
 - Whether any of this is identical on a second unit.
 
 ## 9. What the display board looks like
@@ -248,7 +291,97 @@ From a photo of the rear of the display board (`INN-FR-DU4-A`, PCB marked `lae E
 
 ## 10. The yellow wire
 
-Idles low. Captured per burst, 72% of its bursts are shorter than 100 µs and consist of 1 µs spikes, and
-the long ones have the timing of the white wire. The cheapest explanation is crosstalk into a
-high-impedance input. All key touches were found on the white wire, so yellow was not pursued. What it is
-for is **[unknown]**.
+Idles low. It was captured together with the white wire in eight memory recordings and then on its own,
+continuously, for half an hour (`captures/`, 25 November). Through a divider into a digital input, so
+what we have is when it crosses a threshold, not its waveform.
+
+**It does not carry the keys [line].** Activity of the yellow wire per frame of the white wire (sum of the
+durations of its bursts, median), in frames whose tail carries a key and in idle frames within ±2 s:
+
+| key | frames with the key tail | with key | idle around |
+|---|---|---|---|
+| `+` | 23 | 491 µs | 486 µs |
+| `−` | 14 | 354 µs | 460 µs |
+| mode | 118 | 488 µs | 444 µs |
+| on/off | 41 | 502 µs | 446 µs |
+| fan high | 16 | 460 µs | 494 µs |
+| fan low | 22 | 532 µs | 526 µs |
+| fan auto | 17 + 12 | 524 and 455 µs | 512 and 492 µs |
+| fan night | 9 | 496 µs | 491 µs |
+| mode, held 10 s | 314 + 303 | 522 and 523 µs | 490 and 449 µs |
+
+So the exchange between board and display — the picture one way, the key the other — is on the white
+wire alone, as far as key touches go.
+
+**At rest it ticks with the mains [line].** Bursts of about 100 µs every 10.0 ms (2,001 of 2,275 gaps),
+which is twice the 50 Hz mains frequency, and not synchronous with the 32 ms frames. Only a small excess
+coincides with the frames (crosstalk from the white wire).
+
+**It gets much busier while the fan motor runs [line] + [seen].** A seven-minute test with the owner
+listening at the unit (steps about 90 s apart, yellow logged continuously):
+
+| step | what the owner heard | bursts per second (on-board counter, mean of a minute) | median burst length |
+|---|---|---|---|
+| before: no demand, fan stopped | — | 104 | 85 µs |
+| setpoint raised to 26, fan on auto | **2 relay clicks**, fan starts | ~305 | 516 µs |
+| fan low | no click, fan slows | ~283 | 758 µs |
+| fan high | no click, fan speeds up | 360–396 (minutes shared with a neighbouring step) | 354 µs |
+| fan auto | no click, fan slows | ~315 | 404 µs |
+| setpoint lowered to 22 | **1 click**, fan stops | 104 | 79 µs |
+
+- It rises 3 s after the heating symbol lights and drops in the same second the symbol goes out.
+- Speed changes cause no gap and no spike; the texture changes (more, shorter bursts on high).
+- While the fan runs the bursts have a regular texture: spikes every 48–50 µs, with 150 µs gaps.
+- Total activity is roughly fifteen times the resting level (the live log lost 15–20% of its lines in that
+  state, so the per-burst numbers from it are lower bounds; the counter runs on the ESP32).
+
+**What it probably is [inferred].** Noise coupled from the fan-motor circuit into this wire, synchronous
+with the mains — not data. A digital input cannot prove that; an oscilloscope would. What the wire is
+*for* remains **[unknown]**.
+
+**What does not fit yet.** In five of the memory recordings the same busy texture appeared for well under
+two minutes, a few seconds after something changed (setpoint, switching on, mode), and nobody noted the fan
+at those moments. And in one recording the image showed fan **high** for 7.5 s with the heating symbol lit
+while yellow stayed at rest — either the fan was not turning then, or "busy = fan running" is incomplete.
+
+**The resting level is not constant.** With the fan stopped the median burst length was 57–87 µs with the
+screen on room temperature, 186–209 µs while it showed the setpoint, 130–140 µs earlier the same evening,
+and 43 µs with the display off. Only the big jump (burst rate and total activity) is a reliable sign.
+
+## 11. While the display is off
+
+- **The board keeps sending, 31 frames per second [line].** The receiver splits each frame into two bursts,
+  because in between the line stays at one level for longer than its 300 µs idle limit: a short one,
+  `L1 H1 L1 H1 L1 H1`, and 2–3 ms later (by receive time) a long one, `L7 H2 L3 H2 L1 H3 L2 H6 L7` followed by
+  the tail.
+- **If the long burst starts at bit 31 [inferred]**, bits 0–30 are all 1 — nothing lit — and the rest reads
+  `0 000000 11 000 11 0 111 00 11111`: bit 31 = 0, bits 32–35 = `0000`, 36 = 0, 37 = 0, 38 = 1, 55 = 54, as in
+  §3. In favour: the burst is 26 ticks long, which is bits 31–55 plus the one extra tick a normal frame also
+  has, and it starts with seven zeros like bits 31–37. But the length of the constant level was **not
+  measured**: the receiver sees it as a gap between two bursts.
+- **The display keeps answering in the tail [line].** The second touch of the on/off key is visible as the
+  on/off tail in every frame while the display is dark.
+- For the first 0.47 s after switching off (15 frames) the long burst is different,
+  `L5 H1 L3 H1 L2 H2 L1 H3 L2 H2 L3 H2`. Not decoded.
+- At switch-on, 13 frames (0.48 s) carry an image the parser rejects (54 ticks of data instead of 57):
+  `L2 H1 L1 H1 L1 H1 L1 H1 L4 H1 L2 H1 L1 H1 L1 H2 L4 H1 L1 H1 L2 H1 L2 H8 L7 H1 L1 H1 L3 H3 L7 H3 L7`.
+  It is not the known digits. What the display shows in that half second was not noted **[unknown]**.
+- The published firmware does not recognise this state yet: it counts the bursts as unparsed and keeps the
+  last values.
+
+## 12. Bit 29
+
+It was 0 in every image up to the evening of 25 November — 75,215 frames — and was listed as constant. Then **[line]**:
+
+| time | what happened | bit 29 |
+|---|---|---|
+| 21:55:52 | first image after switching on with the on/off key | 0 → **1** |
+| 21:55–22:15 | fan-speed changes, mode changes, automatic changeover, a first `+` that only shows the setpoint | stays 1 |
+| 22:15:33 | the image in which the setpoint changes 24 → 25 | 1 → **0** |
+| 22:17:33 | after holding the on/off key again | 0 → **1** |
+| 22:42:03 | the image in which the setpoint changes 23 → 24 | 1 → **0** |
+
+- **The rule as observed, twice each way:** it becomes 1 when the unit is switched on with its key, and returns
+  to 0 at the first change of the setpoint.
+- With "0 = lit" something would be missing from the display between switching on and the first setpoint
+  change. The owner could not identify it **[unknown]**.

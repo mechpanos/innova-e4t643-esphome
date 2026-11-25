@@ -296,12 +296,15 @@ inline Tracker &tracker() { static Tracker t; return t; }
 // -- ESP32 ONLY -------------------------------------------------------------------
 #ifdef USE_ESP32
 #include <cstring>
+#include <cstdlib>
+#include "esp_heap_caps.h"
 #include "esphome/core/log.h"
+#include "esphome/core/hal.h"
 namespace fancoil {
 // Prints a burst EXACTLY like ESPHome's "dump: raw", so that the tools (fcwave.load_bursts)
 // read logs of this firmware the same way as logs of raw_capture.yaml.
-inline void log_raw(const int32_t *b, size_t n) {
-  static const char *const TAG = "remote.raw";
+// The tag tells the lines apart: "remote.raw" = white wire (as always), "remote.yellow" = yellow wire.
+inline void log_raw_tag(const char *TAG, const int32_t *b, size_t n) {
   char buf[256];
   int pos = snprintf(buf, sizeof(buf), "Received Raw: ");
   for (size_t i = 0; i < n; i++) {
@@ -313,5 +316,93 @@ inline void log_raw(const int32_t *b, size_t n) {
   }
   if (pos) ESP_LOGI(TAG, "%s", buf);
 }
+inline void log_raw(const int32_t *b, size_t n) { log_raw_tag("remote.raw", b, n); }
+inline uint32_t &yellow_bursts() { static uint32_t n = 0; return n; }
+
+// -- RECORDING TO MEMORY ----------------------------------------------------------
+// Printing both wires live does not fit in the log stream (over a slow link only 18-25 of the 31 lines/s of the
+// white wire arrived). Here the bursts are written to RAM with no printing at all and printed AFTERWARDS, at a
+// rate the stream can carry. Each burst keeps a sequence number and the time the loop received it (us from the
+// start of the recording).
+//
+// Memory: a 6-byte header per burst (channel, count, 4 bytes of time) + values of variable length:
+//   1 byte for -64...63 us (95% of the yellow wire, 83% of the white), 2 bytes for +-16383 us.  ~3.7 kB/s for both wires.
+//
+// Printing (tag "rec"), several bursts per line, separated by "|":
+//   <seq> <W|Y> <us>:v,v,v|<seq> <W|Y> <us>:v,v,...      W = white, Y = yellow; lower case w/y = continuation of the same burst
+struct Recorder {
+  uint8_t *buf{nullptr};
+  size_t cap{0}, len{0}, pos{0};
+  bool recording{false}, dumping{false}, state_changed{false};
+  uint32_t t0_us{0}, dur_ms{0}, t0_ms{0}, n_w{0}, n_y{0}, seq{0}, took_ms{0};
+  char state[64]{"idle"};
+  void set_state_(const char *fmt, unsigned a = 0, unsigned b = 0) { snprintf(state, sizeof(state), fmt, a, b); state_changed = true; }
+
+  // The button: starts a recording; if one is running, stops it and prints what it has.
+  void toggle(uint32_t ms) {
+    if (recording) { stop("stopped by the button"); return; }
+    if (dumping) { ESP_LOGW("rec", "still printing the previous recording"); return; }
+    size_t big = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    size_t bytes = big > 44000 ? big - 24000 : 0;            // leave room for WiFi and the API
+    if (bytes > 130000) bytes = 130000;
+    if (bytes < 20000) { ESP_LOGE("rec", "no memory (largest free block %u)", (unsigned) big); set_state_("failed: no memory"); return; }
+    buf = (uint8_t *) malloc(bytes);
+    if (!buf) { ESP_LOGE("rec", "could not allocate %u bytes", (unsigned) bytes); set_state_("failed: no memory"); return; }
+    cap = bytes; len = pos = 0; n_w = n_y = seq = 0; dur_ms = ms; t0_us = micros(); t0_ms = millis(); recording = true;
+    unsigned fits = (unsigned) (cap / 3700);
+    ESP_LOGI("rec", "START %u ms, memory %u bytes (largest free block %u), fits about %u s", (unsigned) ms, (unsigned) cap, (unsigned) big, fits);
+    set_state_("RECORDING - up to %u s", fits < ms / 1000 ? fits : (unsigned) (ms / 1000));
+  }
+  void add(uint8_t ch, const int32_t *b, size_t n) {
+    if (!recording) return;
+    if (millis() - t0_ms > dur_ms) { stop("time up"); return; }
+    if (n > 200) n = 200;
+    if (len + 6 + 2 * n > cap) { stop("MEMORY FULL"); return; }
+    uint32_t t = micros() - t0_us;
+    buf[len++] = ch; buf[len++] = (uint8_t) n;
+    buf[len++] = t & 0xFF; buf[len++] = (t >> 8) & 0xFF; buf[len++] = (t >> 16) & 0xFF; buf[len++] = (t >> 24) & 0xFF;
+    for (size_t i = 0; i < n; i++) {
+      int32_t v = b[i]; if (v > 16383) v = 16383; if (v < -16383) v = -16383;
+      if (v >= -64 && v <= 63) buf[len++] = (uint8_t) (v & 0x7F);
+      else { buf[len++] = (uint8_t) (0x80 | ((v >> 8) & 0x7F)); buf[len++] = (uint8_t) (v & 0xFF); }
+    }
+    if (ch == 1) n_w++; else n_y++;
+  }
+  void stop(const char *why) {
+    recording = false; dumping = true; pos = 0; took_ms = millis() - t0_ms;
+    ESP_LOGI("rec", "END (%s) after %u ms: white %u bursts, yellow %u bursts, %u bytes", why, (unsigned) took_ms, (unsigned) n_w, (unsigned) n_y, (unsigned) len);
+    set_state_("printing %u s of recording...", (unsigned) ((took_ms + 500) / 1000));
+  }
+  // Called every 100 ms; prints up to max_chars characters and returns.
+  void dump_some(int max_chars) {
+    if (recording && millis() - t0_ms > dur_ms + 500) stop("time up, no bursts");
+    if (!dumping) return;
+    int budget = max_chars;
+    char line[420]; int p = 0;
+    auto flush = [&]() { if (p) { ESP_LOGI("rec", "%s", line); budget -= p + 40; p = 0; } };
+    while (pos < len && budget > 0) {
+      uint8_t ch = buf[pos]; size_t n = buf[pos + 1];
+      uint32_t t = (uint32_t) buf[pos + 2] | ((uint32_t) buf[pos + 3] << 8) | ((uint32_t) buf[pos + 4] << 16) | ((uint32_t) buf[pos + 5] << 24);
+      size_t q = pos + 6;
+      if (p > 300) flush();
+      p += snprintf(line + p, sizeof(line) - p, "%s%u %c %u:", p ? "|" : "", (unsigned) seq, ch == 1 ? 'W' : 'Y', (unsigned) t);
+      for (size_t i = 0; i < n; i++) {
+        int v;
+        if (buf[q] & 0x80) { v = ((buf[q] & 0x7F) << 8) | buf[q + 1]; if (v & 0x4000) v -= 0x8000; q += 2; }
+        else { v = buf[q] & 0x7F; if (v & 0x40) v -= 0x80; q += 1; }
+        if (p > (int) sizeof(line) - 24) { flush(); p = snprintf(line, sizeof(line), "%u %c %u:", (unsigned) seq, ch == 1 ? 'w' : 'y', (unsigned) t); }
+        p += snprintf(line + p, sizeof(line) - p, i + 1 < n ? "%d," : "%d", v);
+      }
+      seq++; pos = q;
+    }
+    flush();
+    if (pos >= len) {
+      dumping = false; free(buf); buf = nullptr;
+      ESP_LOGI("rec", "DONE %u bursts", (unsigned) seq);
+      set_state_("done: %u bursts in %u s", (unsigned) seq, (unsigned) ((took_ms + 500) / 1000));
+    }
+  }
+};
+inline Recorder &recorder() { static Recorder r; return r; }
 }  // namespace fancoil
 #endif

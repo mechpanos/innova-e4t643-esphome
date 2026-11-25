@@ -24,12 +24,13 @@ def _open(path):
     return gzip.open(path, "rt", encoding="utf-8", errors="replace") if path.endswith(".gz") else open(path, encoding="utf-8", errors="replace")
 
 
-def load_bursts(path, with_time=False):
-    """Bursts from a log. with_time=True -> (seconds since midnight or None, [durations])."""
+def load_bursts(path, with_time=False, tag="remote.raw"):
+    """Bursts from a log. with_time=True -> (seconds since midnight or None, [durations]).
+    tag="remote.raw" is the white wire (default); tag="remote.yellow" the yellow wire (fancoil.yaml, "Raw yellow logging")."""
     TS = re.compile(r"^\[(\d\d):(\d\d):(\d\d)\.(\d+)\]")
     out, cur, ct = [], None, None
     for ln in _open(path):
-        if "remote.raw" not in ln: continue
+        if "[" + tag + ":" not in ln: continue
         body = ln.split("]:", 1)[1]
         if "Received Raw:" in body:
             if cur: out.append((ct, cur) if with_time else cur)

@@ -48,7 +48,7 @@ wire, measured twice with a multimeter:
 | **red** | 0 V | **ground** | ESP32 `GND` |
 | **black** | +5.00 V | **+5 V** | not connected |
 | **white** | +4.86 V, idles high | **data** | divider → `GPIO34` |
-| **yellow** | +0.12 V, idles low | no signal of its own found | not needed |
+| **yellow** | +0.12 V, idles low | carries no keys; busy while the fan motor runs (see [PROTOCOL.md](PROTOCOL.md) §10) | optional: its own divider → `GPIO35` |
 
 ![The plug of the COMM cable](images/comm-cable-plug.jpg)
 
@@ -71,6 +71,9 @@ wire, measured twice with a multimeter:
 ```
 
 - The divider turns 5 V into 3.0 V at the pin.
+- **The yellow wire is optional.** Reading the unit needs only red and white. In this project yellow goes
+  through a second, identical divider to `GPIO35` (also input-only), purely to observe it. If you leave it
+  out, remove the `rx_yellow` receiver and its switch and sensor from `fancoil.yaml`.
 - GPIO34 is an input-only pin on the classic ESP32, with no internal pull resistors — so this ESP32
   physically cannot drive the line. The divider does load it with 2.5 kΩ to ground (2 mA while the line
   is high); this line tolerated that, with board and display working normally.
@@ -100,6 +103,8 @@ Both expect a `secrets.yaml` next to them (see `secrets.yaml.example`). That fil
 - `Unparsed bursts per minute` = 0, or very close.
 - `Room temperature` agrees with the display (the display rounds to whole degrees).
 - Touch a key: `Key` names it, and `Setpoint (last shown)` gets a value.
+- If yellow is connected: `Yellow bursts per second` near 100 with the fan stopped (bursts every 10 ms, twice
+  the 50 Hz mains frequency here), and several times that while the fan runs.
 
 If you get bursts but no frames, check the ground first (red, not black), then whether your unit's frame
 differs — in that case a raw capture is exactly what this project would like to see.
@@ -110,5 +115,6 @@ To find out whether the board accepts a key sent by the ESP32, the plan is to ta
 on the COMM connector, keep reading through the same divider, and pull the white wire **low** through a
 transistor and a 1 kΩ series resistor (so that, if the board actively holds the line high, the current
 stays below 5 mA and the line simply does not move). The ESP32 would never drive the line high.
+The yellow wire will not be needed for this: it was captured during all eight keys and showed nothing.
 
 This is a plan. It will be documented here, with what happened, when it has been tried.

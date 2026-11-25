@@ -99,6 +99,53 @@ Other things that fell out of that morning:
   from the Python reference, then flashed. On the ESP32: 31.4 frames per second, nothing rejected.
 - Home Assistant discovered the device and shows the fan coil's state. **Milestone 1.**
 
+## 25 November, evening — the eighth key, and what the yellow wire is not
+
+One question had to be closed before trying to write: the yellow wire had only ever been looked at while
+nothing was happening. If it took part in transmitting a key, a tail injected on the white wire alone
+might fail for the wrong reason.
+
+**Getting both wires at once took three attempts.**
+
+1. Log both live: the log stream (a slow wireless link to the computer) carried 25 of the 31 white frames
+   per second, then 18. The capture was useless.
+2. Blame the serial port and switch it off: it got worse. That version of the explanation died; the
+   bottleneck was the network path.
+3. Record into the ESP32's RAM with no printing, and print afterwards at a rate the stream can carry. That
+   worked: every burst numbered, none missing. It holds about 22 s — or about 4 s once the fan starts,
+   which we only understood later.
+
+**With the owner at the unit, seven recordings:**
+
+| written down beforehand | what the line showed | |
+|---|---|---|
+| the on/off key will have its extra bit on tick 8: `0010 0001 0000 0000` | exactly that | ✅ |
+| if yellow takes part in a key, something will appear on it that is not on white | nothing, for all eight keys | closed |
+
+Also captured for the first time: the display going dark and the board carrying on at 31 frames a second;
+the mode key held for ten seconds, where at 10.02 s both symbols light (automatic changeover), twice; and a
+bit that had been "constant" in 75,215 frames changing after the unit was switched off and on.
+
+**Then the yellow wire did something after all** — bursts several times longer, a few seconds after
+some of the changes, never at the touch itself. The owner's hunch: it flares when the fan relay pulls in,
+more so on the high speed. A second kind of capture (yellow alone, live, no time limit) and a seven-minute
+test with the owner listening settled most of it: the wire is about fifteen times busier **for as long as
+the fan motor runs**, not at the click; there are clicks only at start and stop; the texture differs
+between speeds. So the hunch was right in substance and wrong in one detail, and it came from the person
+who knows the appliance, not from the data.
+
+**Mistakes made that evening, and caught:**
+
+- A counter that reports the *mean of a minute* was read as an instantaneous value, and "the episodes last
+  40–85 s" was said out loud. All that is actually known is "less than two minutes".
+- "The yellow wire follows the fan speed you select" was declared dead on the strength of one recording in
+  which nothing moved. In the longer test the texture does differ per speed. What that one recording means
+  is still open — it is listed as a contradiction in PROTOCOL.md, not explained away.
+- The burst rates of the live log were quoted before noticing that the log loses 15–20% of its lines
+  exactly when the wire is busy.
+
+**Milestone 2.** The key dictionary is complete, and the next experiment needs only the white wire.
+
 ## What was overturned — so nobody looks for it again
 
 | claim | what overturned it |
@@ -114,6 +161,11 @@ Other things that fell out of that morning:
 | ~~fan speed is one key that cycles~~ | four different tails; the owner confirms four keys |
 | ~~the display shows tenths~~ | the owner sees whole degrees |
 | ~~the heating symbol turns on exactly at setpoint > room~~ | with the setpoint 0.1–0.2 above the room it stayed off for 30 s |
+| ~~bits 29–31 are always `010`~~ | bit 29 flips when the unit is switched on with its key, and back at the first setpoint change |
+| ~~the yellow wire might take part in transmitting a key~~ | eight keys, the same activity with and without a key tail |
+| ~~the yellow wire flares at the relay click~~ | it stays busy for as long as the fan runs; speed changes give no click and no flare |
+| ~~the fan-speed bit changes 0.1 s after the touch~~ (as a general rule) | per key, 11 touches: auto and night at once, high and low when the finger leaves |
+| ~~the serial port is why lines get lost with two raw dumps~~ | with the serial port off it was worse; the network path was the limit |
 
 ## How we work now
 
@@ -123,3 +175,6 @@ Other things that fell out of that morning:
 - **Kill the version, not the idea.** When something fails, say which exact version failed and what is
   still open. The recurring mistake in this project was a conclusion wider than its evidence.
 - **Every claim carries its evidence** — seen by eye, on the line, in the manual, or inferred.
+- **Know what a number is before quoting it.** A mean over a minute is not an instant, and a log that drops
+  lines under load undercounts exactly the interesting part.
+- **Listen to the person who lives with the appliance.** Their hunches are cheap to test and often right.

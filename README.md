@@ -4,9 +4,11 @@ Reverse-engineering the **COMM** link between the main board and the touch displ
 that have **no Modbus terminals**, so that they can be read — and eventually controlled — from
 Home Assistant with an ESP32 and a handful of passive parts.
 
-> **Status — milestone 1 reached on 25 November 2026: reading works.**
+> **Status — milestone 2 reached on 25 November 2026: reading works and the key dictionary is complete.**
 > An ESP32 running ESPHome decodes the line and publishes room temperature, fan speed, the
-> heating/cooling symbols and every key touch to Home Assistant.
+> heating/cooling symbols and every key touch to Home Assistant. All eight keys are now known, along with
+> what the board sends while the display is off and what "automatic changeover" looks like. The second
+> signal wire (yellow) was captured during every key and carries none of them.
 > **Writing (control) has not been attempted yet.** Nothing has ever been transmitted to the board.
 
 This is a work log published while the work is still going on. It is updated at every milestone.
@@ -48,7 +50,7 @@ And we want to get there **in a way anyone can repeat**: by sitting on the COMM 
 display with an ESP32, a cable and a few resistors — no soldering on the fan coil's board, no change to
 its firmware.
 
-## What works today (milestone 1 — read only)
+## What works today (read only)
 
 `esphome/fancoil.yaml` listens to one wire and gives Home Assistant:
 
@@ -58,10 +60,12 @@ its firmware.
 | Setpoint (last shown) | the setpoint | only known after someone touches a key: the board sends it for 20 s, then goes back to room temperature |
 | Fan speed | auto / night / low / high | |
 | Heating symbol, Cooling symbol | off / on / blinking | blinking = the unit wants to run but the water is not hot (or cold) enough |
-| Mode (last shown) | heating / cooling | when the demand is satisfied both symbols are off and the frame does not say which mode is selected |
+| Mode (last shown) | heating / cooling | when the demand is satisfied both symbols are off and the frame does not say which mode is selected. Automatic changeover (both symbols lit) is not named yet |
 | Display shows | room temperature / setpoint | |
-| Key | which key is being touched right now | 7 of the 8 keys known; the on/off key has not been captured yet |
-| diagnostics | frames per second, unparsed bursts, line alive, last frame in hex | |
+| Key | which key is being touched right now | all 8 tails are known; this build names 7 and reports on/off as `unknown 0010000100000000` |
+| Yellow bursts per second | activity on the yellow wire, mean over the last minute | optional wire; about 104 at rest, 280–400 while the fan motor runs (one unit, one evening) |
+| Memory recording | state of the on-board recorder (button "Record to memory") | both wires with millisecond timestamps; about 22 s, or about 4 s once the fan starts |
+| diagnostics | frames per second, unparsed bursts, line alive, last frame in hex | while the display is off its frames are counted as unparsed and the entities keep their last values |
 
 The firmware only listens. The input pin it uses cannot drive a line.
 
@@ -87,6 +91,8 @@ Checks behind this claim:
 - On the ESP32 it keeps up with the line: 31.4 frames per second, no rejected bursts in the first minutes.
 - What it published matched what the person standing at the unit reported, key by key, for a session of
   23 key touches (see `captures/README.md`).
+- The tail of the eighth key (on/off) was predicted in writing before it was captured, and came out as
+  predicted: `0010 0001 0000 0000`.
 
 Not yet checked: behaviour over many hours, and more than one physical unit. Everything here comes from
 **one fan coil**.
@@ -103,8 +109,12 @@ The white wire carries one frame 31 times a second. It is **not** a UART.
 
 - The 56 bits are a picture of the display: three 7-segment digits, four fan-speed indicators, a heating
   and a cooling symbol, and a flag saying whether the digits are room temperature or setpoint.
-- A key touch shows up in the **tail**, 3 to 7 frames *before* the data bits react. Each key has its own
+- A key touch shows up in the **tail**, before the data bits react. Each of the eight keys has its own
   tail. That tail is what we will try to reproduce in order to "press keys" from Home Assistant.
+- Some keys act only when held: mode after 1.56 s (heat ↔ cool) and after 10.0 s (automatic changeover on or
+  off), on/off after 1.55 s. A bridge will have to hold a tail for hundreds of frames, not just a few.
+- The **yellow** wire does not take part: its activity is the same with and without a key. It gets about
+  fifteen times busier while the fan motor runs, which makes it look like coupled noise, not data.
 
 Full details, evidence and open questions: **[docs/PROTOCOL.md](docs/PROTOCOL.md)**.
 
@@ -113,7 +123,8 @@ Full details, evidence and open questions: **[docs/PROTOCOL.md](docs/PROTOCOL.md
 | | Milestone | State |
 |---|---|---|
 | 1 | Read the line with ESPHome into Home Assistant | ✅ 25 Nov 2026 |
-| 2 | Complete the key dictionary (the on/off key, the long press of the mode key, the frame while the display is off) | open — needs no new hardware |
+| 2 | Complete the key dictionary (the on/off key, the long press of the mode key, the frame while the display is off) | ✅ 25 Nov 2026 — the bits of the display-off frame are inferred, not measured |
+| 2b | Firmware catches up: display off, automatic changeover, the on/off key by name, bit 29 | open — software only |
 | 3 | Prove that the board accepts a key tail sent by the ESP32 | open — **the big unknown** |
 | 4 | Bridge: ESP32 between board and display, both keep working | open |
 | 5 | A proper `climate` entity in Home Assistant | open |
@@ -127,9 +138,9 @@ this project tries to avoid.
 
 | Path | What |
 |---|---|
-| `esphome/fancoil.yaml`, `fancoil_decode.h` | the read-only firmware |
+| `esphome/fancoil.yaml`, `fancoil_decode.h` | the read-only firmware, with raw logging of either wire and a recorder for both |
 | `esphome/raw_capture.yaml` | firmware that only logs raw pulse durations |
-| `tools/` | Python tools that read those logs: frame parser, timeline, key dictionary, per-touch timing, symbol timeline, decoder test |
+| `tools/` | Python tools that read those logs: frame parser, timeline, key dictionary, per-touch timing, symbol timeline, memory-recording reader, decoder test |
 | `captures/` | the raw captures everything here is derived from |
 | `docs/PROTOCOL.md` | what is known about the link, with the evidence for each claim |
 | `docs/HARDWARE.md` | wiring of the read-only tap, wire colours, safety |
@@ -153,6 +164,7 @@ Without any hardware you can still explore the captures:
 python3 tools/timeline.py captures/2026-11-25_keys_part2.log.gz 08:46:00
 python3 tools/presses.py  captures/2026-11-25_keys_part*.log.gz
 python3 tools/symbols.py  captures/2026-11-25_keys_part2.log.gz
+python3 tools/rec.py      captures/2026-11-25_recordings_keys.log.gz --frames   # all 8 keys, white and yellow together
 python3 tools/test_decoder.py captures/*.log.gz
 ```
 
@@ -163,6 +175,9 @@ python3 tools/test_decoder.py captures/*.log.gz
   produces it; please open an issue.
 - **Do you recognise the frame format** — sync `01010101`, 56 bits, a reply tail on the same wire, a
   16-bit linear check field that is not a plain CRC? It may be a known display-driver or vendor protocol.
+- **Do you know what the panel shows right after it is switched on?** One bit of the frame (bit 29) flips when
+  the unit is switched on with its on/off key and flips back at the first setpoint change. We do not know
+  which element of the display it is.
 - **A different Innova control without Modbus terminals?** The approach should carry over; the bit map
   probably will not.
 

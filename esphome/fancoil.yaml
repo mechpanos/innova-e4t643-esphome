@@ -1,5 +1,5 @@
 # -----------------------------------------------------------------------------
-# fancoil.yaml - READ the fan coil into Home Assistant (milestone 1)
+# fancoil.yaml - READ the fan coil into Home Assistant (milestones 1 and 2)
 #
 # WHAT IT DOES
 #   Listens to the white COMM wire (main board -> touch display) on GPIO34, decodes every
@@ -12,11 +12,19 @@
 #   It does not know the setpoint unless the display shows it (20 s after a key touch).
 #   It does not know the mode while both symbols are off; it keeps the last one shown.
 #
-# RAW CAPTURE WITHOUT REFLASHING
-#   The switch "Raw pulse logging" prints every burst like ESPHome's "dump: raw"
-#   ("Received Raw: ..."), which is what the tools in ../tools read:
-#       timeout 600 esphome logs fancoil.yaml --device <ip> > capture.log
-#   A key with an UNKNOWN tail is always logged raw, even with the switch off.
+# RAW CAPTURE WITHOUT REFLASHING - three ways
+#   1. Switch "Raw pulse logging": prints every burst of the WHITE wire like ESPHome's "dump: raw"
+#      ("Received Raw: ..."), which is what the tools in ../tools read:
+#          timeout 600 esphome logs fancoil.yaml --device <ip> > capture.log
+#      A key with an UNKNOWN tail is always logged raw, even with the switch off.
+#   2. Switch "Raw yellow logging": the same for the YELLOW wire, with the tag remote.yellow.
+#      Do not turn both switches on over a slow link: the log stream may not carry both.
+#   3. Button "Record to memory (up to 30 s)": both wires into RAM with millisecond timestamps, printed
+#      afterwards (tag "rec"). Keep `esphome logs` running BEFORE you press it. Read with ../tools/rec.py.
+#
+# THE YELLOW WIRE IS OPTIONAL
+#   It carries no key information (see ../docs/PROTOCOL.md section 10). If you did not connect it, delete
+#   the `rx_yellow` receiver, the "Raw yellow logging" switch and the "Yellow bursts per second" sensor.
 #
 # BEFORE CHANGING THE DECODER
 #       python3 ../tools/test_decoder.py ../captures/*.log.gz
@@ -28,6 +36,7 @@ substitutions:
   name: fancoil
   friendly_name: Fan coil
   pin_white: GPIO34
+  pin_yellow: GPIO35          # optional, through its own divider - see ../docs/HARDWARE.md
 
 esphome:
   name: ${name}
@@ -41,6 +50,7 @@ esphome:
           id(ts_key).publish_state("none");
           id(ts_mode).publish_state("unknown");
           id(bs_line).publish_state(false);
+          id(ts_rec).publish_state("idle");
 
 esp32:
   board: esp32dev
@@ -89,6 +99,7 @@ remote_receiver:
             const size_t n = x.size() - 1;
             auto &t = fancoil::tracker();
             t.feed(x.data(), n, millis());
+            fancoil::recorder().add(1, x.data(), n);
 
             if (id(raw_dump).state || t.key == fancoil::KEY_UNKNOWN) fancoil::log_raw(x.data(), n);
 
@@ -119,7 +130,29 @@ remote_receiver:
             }
             t.clear_changes();
 
+  # -- THE YELLOW WIRE -- capture only. GPIO35 is input-only as well. filter 1us, as in the captures.
+  - id: rx_yellow
+    pin: ${pin_yellow}
+    filter: 1us
+    idle: 300us
+    buffer_size: 20kb
+    tolerance: 20%
+    on_raw:
+      then:
+        - lambda: |-
+            if (x.size() < 2) return;
+            fancoil::yellow_bursts()++;
+            fancoil::recorder().add(2, x.data(), x.size() - 1);
+            if (id(raw_dump_yellow).state) fancoil::log_raw_tag("remote.yellow", x.data(), x.size() - 1);
+
 interval:
+  # print a memory recording, a little at a time: about 7 kB/s
+  - interval: 100ms
+    then:
+      - lambda: |-
+          auto &r = fancoil::recorder();
+          r.dump_some(500);
+          if (r.state_changed) { r.state_changed = false; id(ts_rec).publish_state(r.state); }
   # is the line alive?
   - interval: 1s
     then:
@@ -131,7 +164,9 @@ interval:
   - interval: 60s
     then:
       - lambda: |-
-          static uint32_t f0 = 0, r0 = 0, b0 = 0, o0 = 0;
+          static uint32_t f0 = 0, r0 = 0, b0 = 0, o0 = 0, y0 = 0;
+          id(s_yellow).publish_state((fancoil::yellow_bursts() - y0) / 60.0f);   // mean over the last minute
+          y0 = fancoil::yellow_bursts();
           static uint64_t last_img = ~0ULL;
           auto &t = fancoil::tracker();
           id(s_fps).publish_state((t.frames - f0) / 60.0f);
@@ -182,6 +217,13 @@ sensor:
     state_class: measurement
     accuracy_decimals: 0
     update_interval: never
+  - platform: template
+    id: s_yellow
+    name: "Yellow bursts per second"
+    entity_category: diagnostic
+    state_class: measurement
+    accuracy_decimals: 1
+    update_interval: never
   - platform: wifi_signal
     name: "WiFi signal"
     update_interval: 60s
@@ -221,6 +263,12 @@ text_sensor:
     icon: mdi:gesture-tap
     update_interval: never
   - platform: template
+    id: ts_rec
+    name: "Memory recording"
+    icon: mdi:record-circle-outline
+    entity_category: diagnostic
+    update_interval: never
+  - platform: template
     id: ts_hex
     name: "Last image (hex)"
     entity_category: diagnostic
@@ -233,10 +281,27 @@ binary_sensor:
     device_class: connectivity
     entity_category: diagnostic
 
+button:
+  # Records up to 30 s of both wires into memory (or until it is full), then prints it to the log (tag "rec").
+  # A second press while recording = stop now and print. The state is shown in "Memory recording".
+  - platform: template
+    name: "Record to memory (up to 30 s)"
+    icon: mdi:record-circle
+    entity_category: config
+    on_press:
+      - lambda: fancoil::recorder().toggle(30000);
+
 switch:
   - platform: template
     id: raw_dump
     name: "Raw pulse logging"
+    icon: mdi:waveform
+    entity_category: config
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+  - platform: template
+    id: raw_dump_yellow
+    name: "Raw yellow logging"
     icon: mdi:waveform
     entity_category: config
     optimistic: true
