@@ -19,6 +19,25 @@ soldered, and the ESP32 cannot drive the line.
 - **Do not power the ESP32 from the COMM cable.** Use its own USB supply. The +5 V on that cable feeds the
   board logic and the display, and an ESP32 with WiFi draws peaks of several hundred milliamps.
 
+## What it looks like
+
+![Main board INN-FR-B20](images/main-board-inn-fr-b20.jpg)
+
+*The main board, `INN-FR-B20 · N276620D`, in the electrical box at the side of the unit. Visible labels:
+`COMM` (right edge, behind the grey probe cables — the 4-wire cable to the display leaves from there),
+`AIR`, `H2`, `H4`, `GRID`, `MOTOR`, the DIP switches `A B` / `C D`, an unpopulated `RTU` footprint,
+unpopulated `10V-DC + −` pads, and the `ZOT` header with its `+5V` `SW` `GND` `RST` pads. Mains wiring is at the
+bottom. **There is 230 V on this board.***
+
+![Display board INN-FR-DU4-A from behind](images/display-board-inn-fr-du4-a.jpg)
+
+*The touch display from behind, `INN-FR-DU4-A`. The white 4-pin connector at the top is the other end of the
+COMM cable. Two `HC595` shift registers drive the LED module (under the label); a third IC handles the rest.*
+
+![The touch panel](images/panel-front.jpg)
+
+*The panel from the front.*
+
 ## The cable
 
 A 4-wire cable runs from the board connector marked `COMM` to the display. Voltages against the red
@@ -54,8 +73,11 @@ wire, measured twice with a multimeter:
 - The ESP32 measures pulse durations with its RMT peripheral (1 µs resolution). One pulse on this line
   is 15.89 µs, so there is plenty of margin.
 
-Parts: an ESP32 dev board (`esp32dev`), a 1 kΩ and a 1.5 kΩ resistor, some wire. The connector looks like
-a 4-pin JST; its pitch has not been measured (2.0 mm PH or 2.5 mm XH).
+Parts: an ESP32 dev board (`esp32dev`), a 1 kΩ and a 1.5 kΩ resistor, some wire. The cable ends in a
+4-pin plug of the JST PH family. On the display board the pin pitch is **about 2.0 mm** — estimated from the
+photo above, using the 0.65 mm pin pitch of the shift registers next to it as the scale (2.0–2.1 mm); it
+has not been measured with a caliper, and the board-side connector has not been measured at all.
+Wire order across the plug: red, white, yellow, black.
 
 How you get onto the wires is up to you and your connector: an adapter cable is the clean way, and it is
 what the next phase will use. In this project the tap was made once and then left in place while the

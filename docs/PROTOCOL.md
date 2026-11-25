@@ -25,9 +25,10 @@ against the red wire, unit idle:
 | red | 0 V | **ground** |
 | black | +5.00 V | **+5 V supply** to the display |
 | white | +4.86 V | **data**, idles high — everything in this document |
-| yellow | +0.12 V | idles low; no signal of its own found (see §9) |
+| yellow | +0.12 V | idles low; no signal of its own found (see §10) |
 
 Red is ground and black is +5 V — the opposite of the usual convention. Logic levels are 5 V.
+Order across the plug: red, white, yellow, black. The cable is marked 26 AWG.
 
 ## 2. The frame
 
@@ -169,8 +170,9 @@ A touch shorter than 1.6 s has not been tried; it might show the current mode wi
 (§8.2.5: both symbols light together; stated as available on 4-pipe units only) — but in the chapter of
 the ECA644 control, not of the E4T643 **[manual]**. Not captured **[unknown]**.
 
-**The eighth key.** The manual says the panel has eight capacitive keys (§9.2.1) **[manual]**; seven
-tails are known. The missing one is presumably on/off. A prediction written down before capturing it: the
+**The eighth key is on/off.** The manual says the panel has eight capacitive keys (§9.2.1) **[manual]**, and
+the panel shows them: `−`, `+`, mode, on/off, and the four fan speeds (photo in the README). Seven tails
+are known; the on/off key has not been captured. A prediction written down before capturing it: the
 extra `1` of the known tails falls on ticks 4, 5, 6, 7 and 9, so the eighth tail may be
 `0010 0001 0000 0000` (tick 8). It may also be wrong: `+` and `−` have more than one `1`.
 
@@ -222,13 +224,29 @@ If you recognise it, please open an issue. The 49 images can be regenerated from
 - Whether the board **accepts** a tail sent by something other than the display. This is the whole next phase.
 - Who drives the line electrically during the tail, and whether the line is open-drain with a pull-up.
 - The rule of the check field, of the tail continuation and of the pre-pulse.
-- The eighth key, the frame while the display is off, the frame in automatic changeover.
+- The tail of the on/off key, the frame while the display is off, the frame in automatic changeover.
 - The exact on/off thresholds of the symbols.
 - What happened on 25 November at 08:22: for at least 10 s the line carried narrow pulses about every 50 µs
   and no frames at all; five minutes later it was normal. The capture is in `captures/`.
 - Whether any of this is identical on a second unit.
 
-## 9. The yellow wire
+## 9. What the display board looks like
+
+From a photo of the rear of the display board (`INN-FR-DU4-A`, PCB marked `lae ELECTRONIC A245_1`) — see
+[HARDWARE.md](HARDWARE.md). These are observations of a photo; nothing was probed.
+
+- Two ICs marked `HC595` (8-bit shift registers), with eight 220 Ω resistors leading to **eight** pads of
+  the LED module, and four small transistors next to its other **four** pads. So the LED module has 12
+  connections, which is what a multiplexed display with 4 commons × 8 segments needs.
+- A third IC sits among the tracks that fan out to the touch areas, and connects to the shift registers.
+  Its marking is not readable in the photo.
+- So the display side has logic of its own. That fits the tail having a different clock than the 56 data
+  bits (§2), and it is where a reply carrying the touched key would have to come from **[inferred]**.
+- The first four bytes of the frame hold exactly 32 lit/unlit positions (three digit bytes and the byte
+  with the fan speeds and the cooling symbol). 4 × 8 = 32 would match the 12 connections of the LED
+  module one to one. **Not verified** — it is arithmetic on a photo, not a measurement.
+
+## 10. The yellow wire
 
 Idles low. Captured per burst, 72% of its bursts are shorter than 100 µs and consist of 1 µs spikes, and
 the long ones have the timing of the white wire. The cheapest explanation is crosstalk into a

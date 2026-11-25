@@ -30,6 +30,16 @@ installer can reach: the terminal block is simply not on the board.
 | Touch display | `INN-FR-DU4-A` |
 | Link between them | 4-wire cable on the connector marked **`COMM`** |
 
+![The E4T643 touch panel on the fan coil](docs/images/panel-front.jpg)
+
+*The panel. Top row: `−`, `+`, mode (heat/cool), on/off. Bottom row: fan speed auto, night, low, high. Two
+digits, and here the heating symbol below them.*
+
+| | |
+|---|---|
+| ![Main board INN-FR-B20](docs/images/main-board-inn-fr-b20.jpg) | ![Display board INN-FR-DU4-A, rear side](docs/images/display-board-inn-fr-du4-a.jpg) |
+| *Main board `INN-FR-B20 · N276620D`. The `COMM` connector is on the right edge, half hidden behind the grey probe cables. There is no RS485 terminal block.* | *The touch display from behind: `INN-FR-DU4-A`, with its 4-pin connector for the COMM cable.* |
+
 What we want, in one sentence: **one source of truth, two views.** Home Assistant sets and shows the
 state; the physical touch panel keeps working; and the panel shows whatever was set from Home Assistant,
 not a state of its own.
@@ -50,7 +60,7 @@ its firmware.
 | Heating symbol, Cooling symbol | off / on / blinking | blinking = the unit wants to run but the water is not hot (or cold) enough |
 | Mode (last shown) | heating / cooling | when the demand is satisfied both symbols are off and the frame does not say which mode is selected |
 | Display shows | room temperature / setpoint | |
-| Key | which key is being touched right now | 7 keys known; the manual mentions 8 |
+| Key | which key is being touched right now | 7 of the 8 keys known; the on/off key has not been captured yet |
 | diagnostics | frames per second, unparsed bursts, line alive, last frame in hex | |
 
 The firmware only listens. The input pin it uses cannot drive a line.
@@ -103,7 +113,7 @@ Full details, evidence and open questions: **[docs/PROTOCOL.md](docs/PROTOCOL.md
 | | Milestone | State |
 |---|---|---|
 | 1 | Read the line with ESPHome into Home Assistant | ✅ 25 Nov 2026 |
-| 2 | Complete the key dictionary (the 8th key, the long press of the mode key, the frame while the display is off) | open — needs no new hardware |
+| 2 | Complete the key dictionary (the on/off key, the long press of the mode key, the frame while the display is off) | open — needs no new hardware |
 | 3 | Prove that the board accepts a key tail sent by the ESP32 | open — **the big unknown** |
 | 4 | Bridge: ESP32 between board and display, both keep working | open |
 | 5 | A proper `climate` entity in Home Assistant | open |
