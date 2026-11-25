@@ -6,6 +6,10 @@ soldered, and the ESP32 cannot drive the line.
 
 ## Before you touch anything
 
+> **You do this at your own risk.** The [disclaimer in the README](../README.md#disclaimer--read-this-before-you-do-anything)
+> applies to everything on this page: no warranty, no liability for damage, injury or a voided appliance
+> warranty, and you are responsible for verifying every step on your own unit.
+
 - **Switch the fan coil off at the mains before opening it**, and before plugging or unplugging any
   connector. There is 230 V inside.
 - **Never probe a live connector with bare wire.** The contacts of the COMM connector are about 2 mm

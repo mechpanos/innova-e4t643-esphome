@@ -12,6 +12,9 @@ Home Assistant with an ESP32 and a handful of passive parts.
 This is a work log published while the work is still going on. It is updated at every milestone.
 It is not affiliated with or endorsed by Innova.
 
+> ⚠️ **Use at your own risk.** No warranty; you alone are responsible for your appliance's warranty, for any
+> damage, and for the safety of people and property. Read the [disclaimer](#disclaimer--read-this-before-you-do-anything) first.
+
 ---
 
 ## The goal
@@ -139,14 +142,36 @@ python3 tools/test_decoder.py captures/*.log.gz
 - **A different Innova control without Modbus terminals?** The approach should carry over; the bit map
   probably will not.
 
-## Safety and disclaimer
+## Disclaimer — read this before you do anything
 
-- A fan coil is a mains appliance. **Switch the power off before opening it** and before plugging or
-  unplugging anything.
-- Everything here is at your own risk. This is not an Innova product or document, and using it may affect
-  your warranty.
-- So far the project has only listened. When it starts transmitting, the documents will say exactly what
-  was tried and what happened.
+**Everything in this repository is used entirely at your own risk.**
+
+This is an independent, unofficial hobby project. It is not affiliated with, authorised by or endorsed by
+Innova. Product and model names are used only to identify the equipment the notes refer to.
+
+- **No warranty of any kind.** The documents, firmware, tools and captures are provided "as is". Nothing
+  here is guaranteed to be correct, complete, or applicable to your unit. All of it comes from **one**
+  fan coil; other hardware or firmware revisions may behave differently, including wire colours and pinout.
+- **Your appliance's warranty.** Opening the unit, connecting anything to its internal wiring, or changing
+  how it is controlled may void the manufacturer's or the installer's warranty. The authors and
+  contributors accept no responsibility for that.
+- **Damage.** To the maximum extent permitted by law, the authors and contributors are not liable for any
+  damage or loss arising from the use or misuse of anything here — to the fan coil or its electronics, to
+  other equipment, to the heating or cooling system, or to the building and its contents (including water,
+  condensation, frost or overheating damage), nor for any consequential cost.
+- **Safety of persons and property.** A fan coil contains mains voltage, a moving fan and hot or cold
+  water. Work on it only if you are competent to do so, with the power disconnected, and in line with the
+  electrical regulations where you live. If in doubt, use a licensed professional. The authors and
+  contributors are not liable for injury, electric shock, fire or any other harm.
+- **Not a safety device.** An ESP32, a WiFi network and a home-automation server can all fail. Do not rely
+  on anything here for frost protection, overheating protection or any function whose failure could harm
+  people or property.
+- **You are responsible for checking what you do.** Before connecting anything, verify it yourself on your
+  own unit: voltages, wire colours, pin order, and whether what you are about to do is suitable, safe,
+  lawful and compatible with your warranty.
+
+So far the project has only listened to the line. When it starts transmitting, the documents will say
+exactly what was tried and what happened — and the same disclaimer will apply, more so.
 
 ## License
 
