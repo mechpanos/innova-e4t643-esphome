@@ -8,7 +8,8 @@ Home Assistant with an ESP32 and a handful of passive parts.
 > An ESP32 running ESPHome decodes the line and publishes room temperature, fan speed, the
 > heating/cooling symbols and every key touch to Home Assistant. All eight keys are now known, along with
 > what the board sends while the display is off and what "automatic changeover" looks like. The second
-> signal wire (yellow) was captured during every key and carries none of them.
+> signal wire (yellow) was captured during every key and carries none of them. Since 26 November the
+> firmware here knows all of that too (milestone 2b), plus an experimental guess of whether the fan is running.
 > **Writing (control) has not been attempted yet.** Nothing has ever been transmitted to the board.
 
 This is a work log published while the work is still going on. It is updated at every milestone.
@@ -60,12 +61,15 @@ its firmware.
 | Setpoint (last shown) | the setpoint | only known after someone touches a key: the board sends it for 20 s, then goes back to room temperature |
 | Fan speed | auto / night / low / high | |
 | Heating symbol, Cooling symbol | off / on / blinking | blinking = the unit wants to run but the water is not hot (or cold) enough |
-| Mode (last shown) | heating / cooling | when the demand is satisfied both symbols are off and the frame does not say which mode is selected. Automatic changeover (both symbols lit) is not named yet |
-| Display shows | room temperature / setpoint | |
-| Key | which key is being touched right now | all 8 tails are known; this build names 7 and reports on/off as `unknown 0010000100000000` |
-| Yellow bursts per second | activity on the yellow wire, mean over the last minute | optional wire; about 104 at rest, 280–400 while the fan motor runs (one unit, one evening) |
+| Mode (last shown) | heating / cooling / automatic changeover | when the demand is satisfied both symbols are off and the frame does not say which mode is selected. While the mode key is held for 10 s it passes through the other mode first |
+| Display shows | room temperature / setpoint / off | |
+| Unit on | on or off with the on/off key | from whether the frames arrive whole or split in two (PROTOCOL §11); decided after three frames. Checked on a PC against the recordings, not yet on the live unit |
+| Key | which of the 8 keys is being touched right now | |
+| Fan running (experimental) | a guess from the yellow wire | optional wire. More than 100 ms of activity per second for 2 s = running, less than 50 ms for 3 s = stopped. One unit, one evening, and a contradiction still open (PROTOCOL §10) |
+| Bit 29 (unknown indication) | 0 or 1 | goes to 1 when the unit is switched on with its key, back to 0 at the first setpoint change; what it shows is not known |
+| Yellow bursts per second, Yellow activity (ms per second) | activity on the yellow wire, means over the last minute | optional wire; about 104 bursts and 17–30 ms at rest, 280–400 bursts and 220–270 ms while the fan motor runs |
 | Memory recording | state of the on-board recorder (button "Record to memory") | both wires with millisecond timestamps; about 22 s, or about 4 s once the fan starts |
-| diagnostics | frames per second, unparsed bursts, line alive, last frame in hex | while the display is off its frames are counted as unparsed and the entities keep their last values |
+| diagnostics | frames per second, unparsed bursts, line alive, last frame in hex | |
 
 The firmware only listens. The input pin it uses cannot drive a line.
 
@@ -93,6 +97,12 @@ Checks behind this claim:
   23 key touches (see `captures/README.md`).
 - The tail of the eighth key (on/off) was predicted in writing before it was captured, and came out as
   predicted: `0010 0001 0000 0000`.
+- The 2b build was run on a PC over the memory recordings before it was flashed: it reports "off" 0.07 s
+  after the display goes dark on the line and "on" 0.06 s after it comes back, names the on/off key and
+  automatic changeover, and gives no false "off" in the 75,215 frames of the other captures. On the ESP32
+  it reads 31.4 frames per second with no unparsed bursts.
+- **Not yet exercised on the live unit with the 2b build:** switching off and on, automatic changeover,
+  and a fan start. Those have only passed on the PC, against the real bursts.
 
 Not yet checked: behaviour over many hours, and more than one physical unit. Everything here comes from
 **one fan coil**.
@@ -124,7 +134,7 @@ Full details, evidence and open questions: **[docs/PROTOCOL.md](docs/PROTOCOL.md
 |---|---|---|
 | 1 | Read the line with ESPHome into Home Assistant | ✅ 25 Nov 2026 |
 | 2 | Complete the key dictionary (the on/off key, the long press of the mode key, the frame while the display is off) | ✅ 25 Nov 2026 — the bits of the display-off frame are inferred, not measured |
-| 2b | Firmware catches up: display off, automatic changeover, the on/off key by name, bit 29 | open — software only |
+| 2b | Firmware catches up: display off, automatic changeover, the on/off key by name, bit 29, an experimental "fan running" | ✅ 26 Nov 2026 — runs on the unit; the new states were checked on a PC against the recordings, not yet live |
 | 3 | Prove that the board accepts a key tail sent by the ESP32 | open — **the big unknown** |
 | 4 | Bridge: ESP32 between board and display, both keep working | open |
 | 5 | A proper `climate` entity in Home Assistant | open |

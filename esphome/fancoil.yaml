@@ -1,11 +1,13 @@
 # -----------------------------------------------------------------------------
-# fancoil.yaml - READ the fan coil into Home Assistant (milestones 1 and 2)
+# fancoil.yaml - READ the fan coil into Home Assistant (milestones 1, 2 and 2b)
 #
 # WHAT IT DOES
 #   Listens to the white COMM wire (main board -> touch display) on GPIO34, decodes every
 #   frame on the ESP32 (fancoil_decode.h) and publishes:
 #     room temperature, last setpoint shown, fan speed, heating and cooling symbols,
-#     last mode shown, what the display shows, which key is being touched
+#     last mode shown (including "automatic changeover"), what the display shows or that it is off,
+#     which of the 8 keys is being touched, bit 29 (meaning unknown),
+#     and, EXPERIMENTAL, from the yellow wire: whether the fan is running
 #
 # WHAT IT DOES NOT DO
 #   IT WRITES NOTHING. GPIO34 is input-only; no line is ever driven.
@@ -23,8 +25,10 @@
 #      afterwards (tag "rec"). Keep `esphome logs` running BEFORE you press it. Read with ../tools/rec.py.
 #
 # THE YELLOW WIRE IS OPTIONAL
-#   It carries no key information (see ../docs/PROTOCOL.md section 10). If you did not connect it, delete
-#   the `rx_yellow` receiver, the "Raw yellow logging" switch and the "Yellow bursts per second" sensor.
+#   It carries no key information (see ../docs/PROTOCOL.md section 10); its only use here is the experimental
+#   "Fan running" guess. If you did not connect it, delete the `rx_yellow` receiver, the "Raw yellow logging"
+#   switch, the "Yellow bursts per second" and "Yellow activity" sensors, the "Fan running (experimental)"
+#   binary sensor, and the lines marked YELLOW in the two `interval` blocks.
 #
 # BEFORE CHANGING THE DECODER
 #       python3 ../tools/test_decoder.py ../captures/*.log.gz
@@ -112,6 +116,12 @@ remote_receiver:
             if (t.setpoint_changed) id(s_setpoint).publish_state(t.setpoint);
             if (t.speed_changed) id(ts_speed).publish_state(fancoil::speed_name(t.speed));
             if (t.screen_changed) id(ts_screen).publish_state(t.screen_setpoint ? "setpoint" : "room temperature");
+            if (t.power_changed) {
+              id(bs_power).publish_state(!t.display_off);
+              if (t.display_off) id(ts_screen).publish_state("off");
+              ESP_LOGI("fancoil", "display %s", t.display_off ? "OFF" : "on");
+            }
+            if (t.bit29_changed) id(ts_bit29).publish_state(t.bit29 ? "1" : "0");
             if (t.heat.changed) id(ts_heat).publish_state(fancoil::sym_name(t.heat.pub));
             if (t.cool.changed) id(ts_cool).publish_state(fancoil::sym_name(t.cool.pub));
             if (t.mode_changed) id(ts_mode).publish_state(fancoil::mode_name(t.mode));
@@ -142,6 +152,7 @@ remote_receiver:
         - lambda: |-
             if (x.size() < 2) return;
             fancoil::yellow_bursts()++;
+            { uint32_t us = 0; for (size_t i = 0; i + 1 < x.size(); i++) us += x[i] < 0 ? -x[i] : x[i]; fancoil::yellow_us() += us; }
             fancoil::recorder().add(2, x.data(), x.size() - 1);
             if (id(raw_dump_yellow).state) fancoil::log_raw_tag("remote.yellow", x.data(), x.size() - 1);
 
@@ -160,13 +171,25 @@ interval:
           auto &t = fancoil::tracker();
           bool alive = t.any_frame && (millis() - t.last_frame_ms) < 2000;
           if (!id(bs_line).has_state() || id(bs_line).state != alive) id(bs_line).publish_state(alive);
+          // YELLOW, EXPERIMENTAL: is the fan running? from the activity of the yellow wire during the last second
+          static uint64_t u0 = 0; static uint32_t m0 = 0;
+          uint32_t now = millis(); uint64_t u = fancoil::yellow_us();
+          if (m0 && now - m0 >= 500) {
+            auto &g = fancoil::fan_guess();
+            g.second((uint32_t) ((u - u0) * 1000 / (now - m0)));
+            if (g.changed) { g.changed = false; id(bs_fan).publish_state(g.on); }
+          }
+          u0 = u; m0 = now;
   # counters and the last image, once a minute so the history stays small
   - interval: 60s
     then:
       - lambda: |-
           static uint32_t f0 = 0, r0 = 0, b0 = 0, o0 = 0, y0 = 0;
-          id(s_yellow).publish_state((fancoil::yellow_bursts() - y0) / 60.0f);   // mean over the last minute
+          static uint64_t yu0 = 0;
+          id(s_yellow).publish_state((fancoil::yellow_bursts() - y0) / 60.0f);   // YELLOW: mean over the last minute
           y0 = fancoil::yellow_bursts();
+          id(s_yellow_ms).publish_state((fancoil::yellow_us() - yu0) / 60000.0f);   // YELLOW: ms of activity per second, mean of the minute
+          yu0 = fancoil::yellow_us();
           static uint64_t last_img = ~0ULL;
           auto &t = fancoil::tracker();
           id(s_fps).publish_state((t.frames - f0) / 60.0f);
@@ -224,6 +247,13 @@ sensor:
     state_class: measurement
     accuracy_decimals: 1
     update_interval: never
+  - platform: template
+    id: s_yellow_ms
+    name: "Yellow activity (ms per second)"
+    entity_category: diagnostic
+    state_class: measurement
+    accuracy_decimals: 1
+    update_interval: never
   - platform: wifi_signal
     name: "WiFi signal"
     update_interval: 60s
@@ -273,6 +303,13 @@ text_sensor:
     name: "Last image (hex)"
     entity_category: diagnostic
     update_interval: never
+  # Goes to 1 when the unit is switched on with the on/off key and back to 0 at the first setpoint change.
+  # What it shows on the display is not known.
+  - platform: template
+    id: ts_bit29
+    name: "Bit 29 (unknown indication)"
+    entity_category: diagnostic
+    update_interval: never
 
 binary_sensor:
   - platform: template
@@ -280,6 +317,16 @@ binary_sensor:
     name: "COMM line"
     device_class: connectivity
     entity_category: diagnostic
+  # On or off with the on/off key - from whether the frames arrive whole or split in two.
+  - platform: template
+    id: bs_power
+    name: "Unit on"
+    device_class: power
+  # EXPERIMENTAL. From the yellow wire (../docs/PROTOCOL.md section 10): more than 100 ms of activity per second = running.
+  - platform: template
+    id: bs_fan
+    name: "Fan running (experimental)"
+    device_class: running
 
 button:
   # Records up to 30 s of both wires into memory (or until it is full), then prints it to the log (tag "rec").

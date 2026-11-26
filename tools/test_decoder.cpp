@@ -36,12 +36,14 @@ int main() {
     if (tr.heat.changed) printf("E %lld heating-symbol %s\n", ms, fancoil::sym_name(tr.heat.pub));
     if (tr.cool.changed) printf("E %lld cooling-symbol %s\n", ms, fancoil::sym_name(tr.cool.pub));
     if (tr.mode_changed) printf("E %lld mode %s\n", ms, fancoil::mode_name(tr.mode));
+    if (tr.power_changed) printf("E %lld unit %s\n", ms, tr.display_off ? "OFF" : "on");
+    if (tr.bit29_changed) printf("E %lld bit29 %d\n", ms, tr.bit29 ? 1 : 0);
     if (tr.key_changed) {
       if (tr.key == fancoil::KEY_UNKNOWN) printf("E %lld key unknown-%04X\n", ms, tr.key_code);
       else printf("E %lld key %s\n", ms, fancoil::key_name(tr.key));
     }
     tr.clear_changes();
   }
-  printf("S frames=%u rejected=%u bad_digits=%u odd_bits=%u\n", tr.frames, tr.rejected, tr.bad_digits, tr.odd_bits);
+  printf("S frames=%u rejected=%u bad_digits=%u odd_bits=%u off_frames=%u\n", tr.frames, tr.rejected, tr.bad_digits, tr.odd_bits, tr.off_frames);
   return 0;
 }

@@ -344,6 +344,18 @@ two minutes, a few seconds after something changed (setpoint, switching on, mode
 at those moments. And in one recording the image showed fan **high** for 7.5 s with the heating symbol lit
 while yellow stayed at rest — either the fan was not turning then, or "busy = fan running" is incomplete.
 
+**A third time, without a witness.** On 26 November, a few minutes past midnight, the heating symbol was lit
+(setpoint 24, room 23.2) while yellow was at rest: 103 bursts and 23 ms of activity per second. Nobody was at
+the unit to say whether the fan was turning.
+
+**The firmware's guess.** `fancoil.yaml` publishes "Fan running (experimental)": the summed length of the
+yellow bursts over each second, running when it is at least 100 ms for two seconds in a row, stopped when it
+is at most 50 ms for three (at the start of the test above the seconds read 69, 98, 213 ms; at rest 17–30).
+Replayed over the half-hour capture (skipping the three seconds in which the log itself delivered no lines) it
+says "running" at 22:42:15 and "stopped" at 22:49:11, three seconds after the rise and the drop on the wire,
+and nothing in between. It rests on one unit and one evening, and on the open question above; treat it as a
+hint, not as a state.
+
 **The resting level is not constant.** With the fan stopped the median burst length was 57–87 µs with the
 screen on room temperature, 186–209 µs while it showed the setpoint, 130–140 µs earlier the same evening,
 and 43 µs with the display off. Only the big jump (burst rate and total activity) is a reliable sign.
@@ -366,8 +378,13 @@ and 43 µs with the display off. Only the big jump (burst rate and total activit
 - At switch-on, 13 frames (0.48 s) carry an image the parser rejects (54 ticks of data instead of 57):
   `L2 H1 L1 H1 L1 H1 L1 H1 L4 H1 L2 H1 L1 H1 L1 H2 L4 H1 L1 H1 L2 H1 L2 H8 L7 H1 L1 H1 L3 H3 L7 H3 L7`.
   It is not the known digits. What the display shows in that half second was not noted **[unknown]**.
-- The published firmware does not recognise this state yet: it counts the bursts as unparsed and keeps the
-  last values.
+- **How the firmware uses this.** A burst that looks like the short one, followed within 15 ms by one that
+  looks like the long one, counts as one display-off frame; three such pairs in a row publish "unit off", and
+  three identical normal frames publish "on" again. The receiver settings are unchanged. Run over the
+  recordings on a PC, "off" comes 0.07 s after the line goes dark and "on" 0.06 s after it returns; in the
+  75,215 frames of the other captures it never says "off". While off, a key is accepted only if its tail is
+  one of the eight known ones, because the position of the tail in the long burst is an estimate.
+  **Not yet seen working on the live unit.**
 
 ## 12. Bit 29
 

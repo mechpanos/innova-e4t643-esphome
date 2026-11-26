@@ -11,7 +11,9 @@
 // What it knows (docs/PROTOCOL.md) - bit 0 = first bit after the sync, 0 = lit:
 //   0-6 tenths digit, 7 heating symbol, 8-14 units digit, 16-22 tens digit (segments g f e d c b a)
 //   24-27 fan speed auto/night/low/high, 28 cooling symbol, 36: 0 = room temperature, 1 = setpoint
-//   The tail after the 56 bits carries the key being touched.
+//   29: changes (1 after switching on with the on/off key, 0 at the first setpoint change) - meaning unknown
+//   The tail after the 56 bits carries the key being touched (8 keys).
+//   Both symbols lit = automatic changeover. With the display off the frame arrives as two bursts (see Tracker).
 // What it does NOT know: the rule of the check bits (39-54). That is why an image is only
 // accepted after it arrives identical 3 times in a row (the board repeats it 31 times a second).
 // -----------------------------------------------------------------------------
@@ -39,6 +41,25 @@ struct Frame {
 
 inline bool one_tick(double d) { return 0.6 * TICK <= d && d <= 1.45 * TICK; }
 inline double absd(int32_t v) { return v < 0 ? -(double) v : (double) v; }
+
+// The 16 tail ticks, from element k (the long low period before them) onwards.
+// "continuation" after the 16 ticks: rest_h = leading ones, rest_l = zeros right after them.
+inline void tail_after(const int32_t *b, size_t n, size_t k, Frame &f) {
+  uint32_t acc = 0; int have = 0, rest_h = 0, rest_l = 0, phase = 0; bool skipped = false;
+  for (size_t j = k + 1; j < n; j++) {
+    long w = lround(absd(b[j]) / TICK);
+    for (long q = 0; q < w; q++) {
+      if (!skipped) { skipped = true; continue; }
+      if (have < 16) { acc = (acc << 1) | (b[j] > 0 ? 1 : 0); have++; continue; }
+      if (phase == 0) { if (b[j] > 0) rest_h++; else { phase = 1; rest_l++; } }
+      else if (phase == 1) { if (b[j] < 0) rest_l++; else phase = 2; }
+    }
+  }
+  if (have == 16) {
+    f.tail_ok = true; f.tail = (uint16_t) acc;
+    if (acc == 0x2000 && rest_h == 6 && rest_l >= 5) f.tail_idle = true;
+  }
+}
 
 // b: durations in us, positive = high, negative = low - EXACTLY as "Received Raw" prints them.
 // (ESPHome's on_raw passes one extra element at the end, the idle gap; the caller drops it.)
@@ -87,36 +108,46 @@ inline Frame parse(const int32_t *b, size_t n) {
   double data_end = (f.pre ? f.pre + 1 : 0) + 8 + NDATA, tot = 0;
   for (size_t k = 0; k < n; k++) {
     tot += absd(b[k]) / TICK;
-    if (tot > data_end + 0.5 && b[k] < 0 && absd(b[k]) / TICK >= 4.5) {
-      // "continuation" after the 16 ticks: rest_h = leading ones, rest_l = zeros right after them
-      uint32_t acc = 0; int have = 0, rest_h = 0, rest_l = 0, phase = 0; bool skipped = false;
-      for (size_t j = k + 1; j < n; j++) {
-        long w = rt(j);
-        for (long q = 0; q < w; q++) {
-          if (!skipped) { skipped = true; continue; }
-          if (have < 16) { acc = (acc << 1) | (b[j] > 0 ? 1 : 0); have++; continue; }
-          if (phase == 0) { if (b[j] > 0) rest_h++; else { phase = 1; rest_l++; } }
-          else if (phase == 1) { if (b[j] < 0) rest_l++; else phase = 2; }
-        }
-      }
-      if (have == 16) {
-        f.tail_ok = true; f.tail = (uint16_t) acc;
-        if (acc == 0x2000 && rest_h == 6 && rest_l >= 5) f.tail_idle = true;
-      }
-      break;
-    }
+    if (tot > data_end + 0.5 && b[k] < 0 && absd(b[k]) / TICK >= 4.5) { tail_after(b, n, k, f); break; }
   }
   return f;
 }
 
+// -- DISPLAY OFF ----------------------------------------------------------------
+// With the display off (docs/PROTOCOL.md, "Display off") the line stays still for more than 300 us inside the frame,
+// so the receiver delivers it as TWO bursts: a short one (the sync: L1 H1 L1 H1 L1 H1 L2, ~127 us) and, 2-3 ms
+// later, a long one that starts low (L7 H2 L3 H2 L1 H3 L2 H6 L7 + tail, ~960 us). The tail works as usual.
+inline bool is_off_sync(const int32_t *b, size_t n) {
+  if (n < 5 || n > 10 || b[0] > 0) return false;
+  double t = 0; int ones = 0;
+  for (size_t k = 0; k < n; k++) { double a = absd(b[k]); if (a > 3.5 * TICK) return false; if (one_tick(a)) ones++; t += a; }
+  return ones >= 5 && t <= 300;
+}
+// The long burst: fills only the tail of f. The tail starts after the first long low period that lies at least
+// 20 ticks into the burst (bits 31-37 at its start are seven zeros too and must not count).
+inline bool parse_off_long(const int32_t *b, size_t n, Frame &f) {
+  if (n < 12 || n > 70 || b[0] > 0) return false;
+  double t = 0;
+  for (size_t k = 0; k < n; k++) t += absd(b[k]);
+  if (t < 600 || t > 1600) return false;
+  double tot = 0;
+  for (size_t k = 0; k < n; k++) {
+    double before = tot;
+    tot += absd(b[k]) / TICK;
+    if (before >= 20 && b[k] < 0 && absd(b[k]) / TICK >= 4.5) { tail_after(b, n, k, f); return true; }
+  }
+  return false;
+}
+
 // -- DICTIONARIES ---------------------------------------------------------------
-enum Key : uint8_t { KEY_NONE, KEY_AUTO, KEY_NIGHT, KEY_LOW, KEY_HIGH, KEY_MODE, KEY_PLUS, KEY_MINUS, KEY_UNKNOWN };
+enum Key : uint8_t { KEY_NONE, KEY_AUTO, KEY_NIGHT, KEY_LOW, KEY_HIGH, KEY_MODE, KEY_PLUS, KEY_MINUS, KEY_ONOFF, KEY_UNKNOWN };
 inline Key key_of(uint16_t tail) {
-  switch (tail) {   // docs/PROTOCOL.md - 7 of the 8 keys the manual mentions
+  switch (tail) {   // docs/PROTOCOL.md - all 8 keys
     case 0x3000: return KEY_AUTO;    // 0011 0000 0000 0000
     case 0x2800: return KEY_NIGHT;   // 0010 1000 0000 0000
     case 0x2400: return KEY_LOW;     // 0010 0100 0000 0000
     case 0x2200: return KEY_HIGH;    // 0010 0010 0000 0000
+    case 0x2100: return KEY_ONOFF;   // 0010 0001 0000 0000
     case 0x2080: return KEY_MODE;    // 0010 0000 1000 0000
     case 0x2050: return KEY_PLUS;    // 0010 0000 0101 0000
     case 0x2038: return KEY_MINUS;   // 0010 0000 0011 1000
@@ -133,6 +164,7 @@ inline const char *key_name(Key k) {
     case KEY_MODE: return "mode (heat/cool)";
     case KEY_PLUS: return "+";
     case KEY_MINUS: return "-";
+    case KEY_ONOFF: return "on/off";
     default: return "unknown";
   }
 }
@@ -156,7 +188,7 @@ inline const char *mode_name(Mode m) {
   switch (m) {
     case MODE_HEAT: return "heating";
     case MODE_COOL: return "cooling";
-    case MODE_BOTH: return "both symbols";   // the manual describes this for automatic changeover; never captured
+    case MODE_BOTH: return "automatic changeover";   // both symbols lit (docs/PROTOCOL.md; manual section 8.2.5)
     default: return "unknown";
   }
 }
@@ -228,19 +260,50 @@ struct Tracker {
   Key key{KEY_NONE}; uint16_t key_code{0}; bool key_changed{false};
   uint16_t cand_tail{0}; bool cand_idle{true}; uint8_t cand_tail_n{0};
 
+  // display on or off (the on/off key)
+  bool display_off{false}, power_valid{false}, power_changed{false};
+  uint32_t off_frames{0}, off_sync_ms{0}; bool off_sync{false}; uint8_t off_n{0};
+
+  // bit 29: it changes, meaning unknown
+  bool bit29{false}, bit29_valid{false}, bit29_changed{false};
+
   void clear_changes() {
     img_changed = room_changed = setpoint_changed = speed_changed = screen_changed = mode_changed = key_changed = false;
     heat.changed = cool.changed = false;
+    power_changed = bit29_changed = false;
   }
 
   void feed(const int32_t *b, size_t n, uint32_t now) {
     Frame f = parse(b, n);
-    if (!f.ok) { if (n >= 20) rejected++; return; }
+    if (!f.ok) {
+      // display off: the frame arrives as a pair "short + long" within a few ms
+      if (is_off_sync(b, n)) { off_sync = true; off_sync_ms = now; return; }
+      Frame g;
+      if (off_sync && now - off_sync_ms <= 15 && parse_off_long(b, n, g)) {
+        off_sync = false;
+        frames++; off_frames++; last_frame_ms = now; any_frame = true;
+        if (off_n < 255) off_n++;
+        if (off_n == 3 && (!power_valid || !display_off)) {
+          display_off = true; power_valid = true; power_changed = true;
+          img_valid = false; cand_n = 0; screen_valid = false;      // after switching on everything is read again
+        }
+        if (display_off) { heat.update(false, now); cool.update(false, now); }
+        // key: with the display off only idle or a known key is accepted (the tail position here is an estimate)
+        bool gi = g.tail_idle || !g.tail_ok || key_of(g.tail) == KEY_UNKNOWN;
+        feed_tail_(gi, gi ? 0 : g.tail);
+        return;
+      }
+      off_sync = false;
+      if (n >= 20) rejected++;
+      return;
+    }
+    off_sync = false; off_n = 0;
     frames++; last_frame_ms = now; any_frame = true;
 
     // 1) image: identical 3 times in a row
     uint64_t d = f.bits & MASK55;
     if (d == cand_img && cand_n) { if (cand_n < 255) cand_n++; } else { cand_img = d; cand_n = 1; }
+    if (cand_n == 3 && (!power_valid || display_off)) { display_off = false; power_valid = true; power_changed = true; }
     if (cand_n == 3 && (!img_valid || d != img)) { img = d; img_valid = true; img_changed = true; decode_image_(); }
 
     // 2) symbols and mode: run on every frame so that their timers advance
@@ -255,7 +318,11 @@ struct Tracker {
 
     // 3) key: the same tail 3 times in a row
     bool idle = f.tail_idle || !f.tail_ok;   // a tail that could not be read does not count as a key
-    uint16_t code = idle ? 0 : f.tail;
+    feed_tail_(idle, idle ? 0 : f.tail);
+  }
+
+ protected:
+  void feed_tail_(bool idle, uint16_t code) {
     if (cand_tail_n && idle == cand_idle && code == cand_tail) { if (cand_tail_n < 255) cand_tail_n++; }
     else { cand_idle = idle; cand_tail = code; cand_tail_n = 1; }
     if (cand_tail_n == 3) {
@@ -264,13 +331,15 @@ struct Tracker {
     }
   }
 
- protected:
   void decode_image_() {
-    // constant bits: 15, 23 = 1; 29-31 = 010; 32-35 = 0000; 37 = 0; 38 = not(36)
-    bool odd = !bit_at(img, 15) || !bit_at(img, 23) || bit_at(img, 29) || !bit_at(img, 30) || bit_at(img, 31) ||
+    // constant bits: 15, 23 = 1; 30-31 = 10; 32-35 = 0000; 37 = 0; 38 = not(36).  Bit 29 is NOT constant.
+    bool odd = !bit_at(img, 15) || !bit_at(img, 23) || !bit_at(img, 30) || bit_at(img, 31) ||
                bit_at(img, 32) || bit_at(img, 33) || bit_at(img, 34) || bit_at(img, 35) || bit_at(img, 37) ||
                (bit_at(img, 38) == bit_at(img, 36));
     if (odd) odd_bits++;
+
+    bool b29 = bit_at(img, 29);
+    if (!bit29_valid || b29 != bit29) { bit29 = b29; bit29_valid = true; bit29_changed = true; }
 
     bool sp = bit_at(img, 36);
     if (!screen_valid || sp != screen_setpoint) { screen_setpoint = sp; screen_valid = true; screen_changed = true; }
@@ -290,6 +359,25 @@ struct Tracker {
 };
 
 inline Tracker &tracker() { static Tracker t; return t; }
+
+// -- IS THE FAN RUNNING? (EXPERIMENTAL, from the yellow wire) ---------------------
+// docs/PROTOCOL.md, "The yellow wire": with the fan stopped the yellow wire is high for ~17-30 ms per second, while it
+// runs 220-270 ms (at start-up 69 -> 98 -> 213 ms over three seconds). Two seconds in a row above 100 ms = running,
+// three below 50 ms = stopped. One unit, one evening, and one contradiction still open. Hence "experimental".
+struct FanGuess {
+  bool on{false}, valid{false}, changed{false};
+  uint8_t hi{0}, lo{0};
+  void second(uint32_t us) {     // activity of the yellow wire during the last second, in us
+    if (us >= 100000) { if (hi < 255) hi++; lo = 0; }
+    else if (us <= 50000) { if (lo < 255) lo++; hi = 0; }
+    else { hi = 0; lo = 0; }
+    bool s = on;
+    if (hi >= 2) s = true;
+    if (lo >= 3) s = false;
+    if (!valid || s != on) { on = s; valid = true; changed = true; }
+  }
+};
+inline FanGuess &fan_guess() { static FanGuess g; return g; }
 
 }  // namespace fancoil
 
@@ -318,6 +406,7 @@ inline void log_raw_tag(const char *TAG, const int32_t *b, size_t n) {
 }
 inline void log_raw(const int32_t *b, size_t n) { log_raw_tag("remote.raw", b, n); }
 inline uint32_t &yellow_bursts() { static uint32_t n = 0; return n; }
+inline uint64_t &yellow_us() { static uint64_t n = 0; return n; }      // total duration of the yellow wire's bursts
 
 // -- RECORDING TO MEMORY ----------------------------------------------------------
 // Printing both wires live does not fit in the log stream (over a slow link only 18-25 of the 31 lines/s of the

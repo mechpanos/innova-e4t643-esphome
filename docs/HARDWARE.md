@@ -72,8 +72,9 @@ wire, measured twice with a multimeter:
 
 - The divider turns 5 V into 3.0 V at the pin.
 - **The yellow wire is optional.** Reading the unit needs only red and white. In this project yellow goes
-  through a second, identical divider to `GPIO35` (also input-only), purely to observe it. If you leave it
-  out, remove the `rx_yellow` receiver and its switch and sensor from `fancoil.yaml`.
+  through a second, identical divider to `GPIO35` (also input-only), to observe it; the firmware's only use
+  for it is the experimental "Fan running" guess. If you leave it out, remove what the header of
+  `fancoil.yaml` lists under "the yellow wire is optional".
 - GPIO34 is an input-only pin on the classic ESP32, with no internal pull resistors — so this ESP32
   physically cannot drive the line. The divider does load it with 2.5 kΩ to ground (2 mA while the line
   is high); this line tolerated that, with board and display working normally.
@@ -104,7 +105,10 @@ Both expect a `secrets.yaml` next to them (see `secrets.yaml.example`). That fil
 - `Room temperature` agrees with the display (the display rounds to whole degrees).
 - Touch a key: `Key` names it, and `Setpoint (last shown)` gets a value.
 - If yellow is connected: `Yellow bursts per second` near 100 with the fan stopped (bursts every 10 ms, twice
-  the 50 Hz mains frequency here), and several times that while the fan runs.
+  the 50 Hz mains frequency here), and several times that while the fan runs. `Fan running (experimental)`
+  is derived from the same wire; compare it with what you hear before trusting it.
+- Hold the on/off key until the display goes dark: `Unit on` should turn off and `Display shows` should read
+  `off`. (On the unit this was developed on, that has so far only been checked on a PC against recordings.)
 
 If you get bursts but no frames, check the ground first (red, not black), then whether your unit's frame
 differs — in that case a raw capture is exactly what this project would like to see.

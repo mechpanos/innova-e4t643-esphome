@@ -146,6 +146,25 @@ who knows the appliance, not from the data.
 
 **Milestone 2.** The key dictionary is complete, and the next experiment needs only the white wire.
 
+## 26 November — the firmware catches up (milestone 2b)
+
+The evening's findings went into the decoder: the on/off key by name, automatic changeover, bit 29 as a
+value of its own instead of an "unexpected bit", and the display-off state. The last one needed a decision.
+With the display off the receiver delivers each frame in two pieces, and the obvious fix — a longer idle
+limit, so the frame arrives whole — would have changed how every burst is cut, away from the settings all
+the captures were taken with. So the receiver stayed as it is and the decoder learned to recognise the
+pair instead. It was replayed on a PC over the recordings and over every older capture before it went on
+the ESP32.
+
+The yellow wire got a use after all, a modest one: an experimental "fan running" from how busy it is. The
+first replay said the fan had stopped in the middle of the test. It had not: the log stream had stalled
+for a few seconds, and the rule was reading a hole in the log as a quiet wire. The rule now needs three quiet
+seconds, and the lesson was already on the list below.
+
+What is **not** known: none of the new states has been watched on the live unit yet. And in the first
+minutes after the flash the heating symbol was lit while the yellow wire was quiet — the same picture as the
+one recording that does not fit — with nobody there to listen.
+
 ## What was overturned — so nobody looks for it again
 
 | claim | what overturned it |

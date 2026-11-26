@@ -116,6 +116,7 @@ python3 tools/fcwave.py   captures/2026-11-24_idle.log.gz            # 5,640 bur
 python3 tools/keys.py     captures/2026-11-25_keys_part*.log.gz      # 7 key tails (rewrites tools/key_tails.json WITHOUT on/off, which comes from recording 3)
 python3 tools/presses.py  captures/2026-11-25_keys_part*.log.gz      # 23 touches, when the data reacted
 python3 tools/symbols.py  captures/2026-11-25_keys_part2.log.gz      # setpoint, room temperature, symbols
-python3 tools/test_decoder.py --quiet captures/*.log.gz              # firmware decoder vs reference parser
+python3 tools/test_decoder.py --quiet captures/*.log.gz              # firmware decoder vs reference parser (raw dumps and memory recordings)
+python3 tools/test_decoder.py captures/2026-11-25_recordings_keys.log.gz   # what the firmware publishes for the seven recordings: on/off, unit OFF/on, automatic changeover, bit 29
 python3 tools/rec.py      captures/2026-11-25_recordings_keys.log.gz   # the seven recordings; add --frames for every frame
 ```

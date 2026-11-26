@@ -5,6 +5,9 @@
     python3 test_decoder.py <log> [<log> ...]          # comparison + what the firmware would publish
     python3 test_decoder.py --quiet <log> [...]        # comparison only
 
+Files with MEMORY RECORDINGS (tag "rec") are accepted too: the bursts of the white wire are taken, and each
+recording starts 100 s after the previous one (the time in the listing is then counted from the start of the first).
+
 Compiles test_decoder.cpp (which includes ../esphome/fancoil_decode.h, the very code that runs
 on the ESP32) and compares EVERY burst with fcwave.py: frame or not, pre-pulse, the 56 bits,
 idle tail or key tail. Then prints what the firmware would have published to Home Assistant,
@@ -13,7 +16,7 @@ with the time of the capture. Exit code 1 on any difference. Needs g++.
 import sys, os, subprocess, tempfile, collections
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-import fcwave
+import fcwave, rec
 hh = lambda ms: fcwave.hhmmss(ms / 1000.0)
 
 quiet = "--quiet" in sys.argv
@@ -22,8 +25,14 @@ if not logs: sys.exit("usage: test_decoder.py [--quiet] <log> [<log> ...]")
 exe = os.path.join(tempfile.gettempdir(), "fancoil_test_decoder")
 subprocess.check_call(["g++", "-O2", "-std=c++17", "-Wall", "-I", os.path.join(HERE, "..", "esphome"), os.path.join(HERE, "test_decoder.cpp"), "-o", exe])
 bad = 0
+sets = []
 for path in logs:
     B = [(t, b) for t, b in fcwave.load_bursts(path, with_time=True) if t is not None and b]
+    if B: sets.append((path, B))
+    # memory recordings: the white wire only, 100 s per recording
+    B = [(i * 100 + t / 1e6, v) for i, r in enumerate(rec.load(path)) for s_, ch, t, v in r["bursts"] if ch == "W" and v]
+    if B: sets.append((path + "  [memory recordings]", B))
+for path, B in sets:
     inp = "\n".join("%d %s" % (round(t * 1000), " ".join(map(str, b))) for t, b in B) + "\n"
     out = subprocess.run([exe], input=inp, capture_output=True, text=True, check=True).stdout.split("\n")
     F = [l.split(" ") for l in out if l.startswith("F ")]
