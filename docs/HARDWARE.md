@@ -15,7 +15,8 @@ soldered, and the ESP32 cannot drive the line.
 - **Never probe a live connector with bare wire.** The contacts of the COMM connector are about 2 mm
   apart. During this project a strand once bridged two neighbours; the display went dark until the unit
   was power-cycled. Nothing was damaged, but that was luck.
-- **ESP32 pins do not tolerate 5 V.** The line is 5 V logic. Always go through the divider below.
+- **ESP32 pins do not tolerate 5 V.** The line is 5 V logic. Never connect it straight to a pin; see "The tap"
+  for what was used here and what would be cleaner.
 - **Do not power the ESP32 from the COMM cable.** Use its own USB supply. The +5 V on that cable feeds the
   board logic and the display, and an ESP32 with WiFi draws peaks of several hundred milliamps.
 
@@ -47,8 +48,8 @@ wire, measured twice with a multimeter:
 |---|---|---|---|
 | **red** | 0 V | **ground** | ESP32 `GND` |
 | **black** | +5.00 V | **+5 V** | not connected |
-| **white** | +4.86 V, idles high | **data** | divider → `GPIO34` |
-| **yellow** | +0.12 V, idles low | carries no keys; busy while the fan motor runs (see [PROTOCOL.md](PROTOCOL.md) §10) | optional: its own divider → `GPIO35` |
+| **white** | +4.86 V, idles high | **data** | 10 kΩ in series → `GPIO34` |
+| **yellow** | +0.12 V, idles low | carries no keys; busy while the fan motor runs (see [PROTOCOL.md](PROTOCOL.md) §10) | optional: its own 10 kΩ in series → `GPIO35` |
 
 ![The plug of the COMM cable](images/comm-cable-plug.jpg)
 
@@ -63,25 +64,36 @@ wire, measured twice with a multimeter:
 ```
  COMM cable (board ↔ display, left connected)
      red   ─────────────────────────────── GND   (ESP32)
-     white ────[ 1 kΩ ]────┬────────────── GPIO34
-                           │
-                        [ 1.5 kΩ ]
-                           │
-                          GND
+     white ────[ 10 kΩ ]────────────────── GPIO34
 ```
 
-- The divider turns 5 V into 3.0 V at the pin.
+> **Correction, 26 November 2026.** Until today this page showed a 1 kΩ / 1.5 kΩ divider and said the line
+> "tolerated" its 2.5 kΩ load. That divider was a plan that was never built. What has actually been on the
+> unit since 22 November, and what every capture in this repository was taken with, is **one 10 kΩ resistor
+> in series** per wire. The owner confirmed it for the white wire; the yellow wire is the same according to
+> the notes of 22 November.
+
+- **This is a bench shortcut, not a recommendation.** With 5 V on the line the pin sits above 3.3 V, and the
+  resistor limits the current into the pin's input protection to roughly 0.15 mA (a calculation, not a
+  measurement). That is outside what the ESP32 datasheet guarantees. It has worked here since 22 November
+  with no visible harm.
+- **The cleaner way is a divider**, for example 10 kΩ from the wire to the pin and 15 kΩ from the pin to
+  ground (3.0 V at the pin). **Not tried in this project.** It would change the edge timing slightly, so
+  captures taken that way may differ a little from the ones here.
+- The 10 kΩ and the capacitance of the pin and wiring slow the edges (estimated at about 2 µs, not
+  measured). At 15.89 µs per tick that did not hurt the white wire. For the narrow spikes of the yellow
+  wire it means the durations in the documents are what the pin saw, not what is on the cable.
+- The tap loads the line very lightly.
 - **The yellow wire is optional.** Reading the unit needs only red and white. In this project yellow goes
-  through a second, identical divider to `GPIO35` (also input-only), to observe it; the firmware's only use
+  through a second 10 kΩ series resistor to `GPIO35` (also input-only), to observe it; the firmware's only use
   for it is the experimental "Fan running" guess. If you leave it out, remove what the header of
   `fancoil.yaml` lists under "the yellow wire is optional".
 - GPIO34 is an input-only pin on the classic ESP32, with no internal pull resistors — so this ESP32
-  physically cannot drive the line. The divider does load it with 2.5 kΩ to ground (2 mA while the line
-  is high); this line tolerated that, with board and display working normally.
+  physically cannot drive the line.
 - The ESP32 measures pulse durations with its RMT peripheral (1 µs resolution). One pulse on this line
   is 15.89 µs, so there is plenty of margin.
 
-Parts: an ESP32 dev board (`esp32dev`), a 1 kΩ and a 1.5 kΩ resistor, some wire. The cable ends in a
+Parts: an ESP32 dev board (`esp32dev`), a 10 kΩ resistor (two with the yellow wire), some wire. The cable ends in a
 4-pin plug of the JST PH family. On the display board the pin pitch is **about 2.0 mm** — estimated from the
 photo above, using the 0.65 mm pin pitch of the shift registers next to it as the scale (2.0–2.1 mm); it
 has not been measured with a caliper, and the board-side connector has not been measured at all.
@@ -116,7 +128,7 @@ differs — in that case a raw capture is exactly what this project would like t
 ## Next phase — planned, NOT tested
 
 To find out whether the board accepts a key sent by the ESP32, the plan is to take the **display's place**
-on the COMM connector, keep reading through the same divider, and pull the white wire **low** through a
+on the COMM connector, keep reading through the same series resistor, and pull the white wire **low** through a
 transistor and a 1 kΩ series resistor (so that, if the board actively holds the line high, the current
 stays below 5 mA and the line simply does not move). The ESP32 would never drive the line high.
 The yellow wire will not be needed for this: it was captured during all eight keys and showed nothing.

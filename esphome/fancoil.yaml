@@ -40,7 +40,7 @@ substitutions:
   name: fancoil
   friendly_name: Fan coil
   pin_white: GPIO34
-  pin_yellow: GPIO35          # optional, through its own divider - see ../docs/HARDWARE.md
+  pin_yellow: GPIO35          # optional, through its own series resistor - see ../docs/HARDWARE.md
 
 esphome:
   name: ${name}

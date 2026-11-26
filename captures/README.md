@@ -1,8 +1,9 @@
 # Captures
 
 Raw pulse durations of the COMM cable of one fan coil (board `INN-FR-B20 · N276620D`, control E4T643),
-taken with an ESP32 (RMT, 1 µs resolution): the **white** wire through a 1 kΩ / 1.5 kΩ divider on GPIO34
-and, in the files of the evening of 25 November, also the **yellow** wire through a second divider on GPIO35.
+taken with an ESP32 (RMT, 1 µs resolution): the **white** wire through a 10 kΩ series resistor on GPIO34
+and, in the files of the evening of 25 November, also the **yellow** wire through a second 10 kΩ on GPIO35.
+(Until 26 November this file said "1 kΩ / 1.5 kΩ divider". That was a plan that was never built; see docs/HARDWARE.md.)
 
 There are three kinds of file. Every line is an ESPHome log line and nothing else.
 

@@ -158,7 +158,7 @@ this project tries to avoid.
 
 ## Try it
 
-You need an ESP32 dev board, two resistors and access to the COMM cable.
+You need an ESP32 dev board, a resistor (two if you also tap the yellow wire) and access to the COMM cable.
 Read **[docs/HARDWARE.md](docs/HARDWARE.md)** first: the line is 5 V logic, and on this cable the
 **red wire is ground and the black wire is +5 V**.
 

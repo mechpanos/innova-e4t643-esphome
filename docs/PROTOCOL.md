@@ -292,8 +292,9 @@ From a photo of the rear of the display board (`INN-FR-DU4-A`, PCB marked `lae E
 ## 10. The yellow wire
 
 Idles low. It was captured together with the white wire in eight memory recordings and then on its own,
-continuously, for half an hour (`captures/`, 25 November). Through a divider into a digital input, so
-what we have is when it crosses a threshold, not its waveform.
+continuously, for half an hour (`captures/`, 25 November). Through a 10 kΩ series resistor into a digital
+input, so what we have is when it crosses a threshold, not its waveform — and the resistor with the pin's
+capacitance slows the edges (estimated at about 2 µs, not measured), so very narrow spikes may be missed or stretched.
 
 **It does not carry the keys [line].** Activity of the yellow wire per frame of the white wire (sum of the
 durations of its bursts, median), in frames whose tail carries a key and in idle frames within ±2 s:

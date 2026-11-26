@@ -184,6 +184,7 @@ one recording that does not fit — with nobody there to listen.
 | ~~the yellow wire might take part in transmitting a key~~ | eight keys, the same activity with and without a key tail |
 | ~~the yellow wire flares at the relay click~~ | it stays busy for as long as the fan runs; speed changes give no click and no flare |
 | ~~the fan-speed bit changes 0.1 s after the touch~~ (as a general rule) | per key, 11 touches: auto and night at once, high and low when the finger leaves |
+| ~~the tap is a 1 kΩ / 1.5 kΩ divider~~ (in these documents until 26 November) | the owner: one 10 kΩ in series per wire. The divider was a plan that was written down as if it had been built; with it falls "the line tolerated a 2.5 kΩ load" |
 | ~~the serial port is why lines get lost with two raw dumps~~ | with the serial port off it was worse; the network path was the limit |
 
 ## How we work now
@@ -196,4 +197,7 @@ one recording that does not fit — with nobody there to listen.
 - **Every claim carries its evidence** — seen by eye, on the line, in the manual, or inferred.
 - **Know what a number is before quoting it.** A mean over a minute is not an instant, and a log that drops
   lines under load undercounts exactly the interesting part.
+- **A plan is not a record.** A drawing of what should be built is not evidence of what was built. This
+  project's own hardware page described a divider that never existed, until the owner said "I do not have
+  that resistor".
 - **Listen to the person who lives with the appliance.** Their hunches are cheap to test and often right.
